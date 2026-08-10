@@ -1,0 +1,99 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}{{ category.name }} — Subcategories{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <!-- Breadcrumb + header -->
+    <div class="flex items-center gap-3 mb-6">
+        <a href="{% url 'categories_list' %}" class="text-gray-500 hover:text-gray-700">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+        </a>
+        <div class="flex-1">
+            <div class="text-xs text-gray-500 mb-1">
+                <a href="{% url 'categories_list' %}" class="hover:text-primary-600">Categories</a>
+                <span class="mx-1">/</span>
+                <span>{{ category.name }}</span>
+            </div>
+            <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">{{ category.name }} — Subcategories</h1>
+        </div>
+        <a href="{% url 'subcategory_add' category.id %}"
+           class="bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2 px-4 rounded-lg flex items-center gap-2 shadow-sm">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            Add Subcategory
+        </a>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <!-- Subcategories grid -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        {% for sub in subcategories %}
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition">
+            <!-- Icon -->
+            <a href="{% url 'services_list_sub' sub.id %}" class="block aspect-square bg-gray-50 flex items-center justify-center relative">
+                {% if sub.icon %}
+                    <img src="{{ sub.icon.url }}" alt="{{ sub.name }}" class="w-full h-full object-cover">
+                {% else %}
+                    <svg class="w-16 h-16 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+                    </svg>
+                {% endif %}
+
+                {% if sub.is_active %}
+                    <span class="absolute top-2 right-2 bg-green-100 text-green-700 text-xs font-semibold px-2 py-0.5 rounded-full">Active</span>
+                {% else %}
+                    <span class="absolute top-2 right-2 bg-gray-100 text-gray-500 text-xs font-semibold px-2 py-0.5 rounded-full">Inactive</span>
+                {% endif %}
+            </a>
+
+            <!-- Info -->
+            <div class="p-4">
+               <a href="{% url 'services_list_sub' sub.id %}" class="block hover:text-primary-600">
+                    <div class="font-semibold text-gray-900 truncate">{{ sub.name }}</div>
+                    <div class="text-sm text-gray-500 mt-1">From ₹{{ sub.base_price|floatformat:0 }}</div>
+                </a>
+
+                <div class="flex gap-2 mt-4">
+                    <a href="{% url 'subcategory_edit' sub.id %}"
+                       class="flex-1 text-center text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-lg">
+                        Edit
+                    </a>
+                    <form method="post" action="{% url 'subcategory_delete' sub.id %}"
+                          onsubmit="return confirm('Delete this subcategory? This cannot be undone.')" class="flex-1">
+                        {% csrf_token %}
+                        <button type="submit"
+                                class="w-full text-xs font-semibold bg-red-50 hover:bg-red-100 text-red-600 py-2 rounded-lg">
+                            Delete
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-span-full">
+            <div class="bg-white rounded-2xl border border-gray-100 p-12 text-center">
+                <svg class="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2z"/>
+                </svg>
+                <p class="text-gray-500 mb-4">No subcategories yet for {{ category.name }}.</p>
+                <a href="{% url 'subcategory_add' category.id %}"
+                   class="inline-block bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2 px-6 rounded-lg">
+                    Add First Subcategory
+                </a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

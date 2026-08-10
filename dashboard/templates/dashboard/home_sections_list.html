@@ -1,0 +1,86 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}Home Sections{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+    <div class="flex justify-between items-start mb-6">
+        <div>
+            <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">Home Sections</h1>
+            <p class="text-gray-500 mt-1">Manage horizontal service sections shown on home page.</p>
+        </div>
+        <a href="{% url 'home_section_add' %}"
+           class="bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2 px-4 rounded-lg flex items-center gap-2 shadow-sm">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            Add Section
+        </a>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <!-- Sections list -->
+    <div class="space-y-3">
+        {% for section in sections %}
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition">
+            <div class="flex items-start justify-between">
+                <div class="flex-1">
+                    <div class="flex items-center gap-3 mb-2">
+                        <span class="bg-gray-100 text-gray-600 text-xs font-semibold px-2 py-0.5 rounded-full">
+                            #{{ section.sort_order }}
+                        </span>
+                        <h2 class="text-lg font-bold text-gray-900">{{ section.title }}</h2>
+                        {% if section.is_active %}
+                            <span class="bg-green-100 text-green-700 text-xs font-semibold px-2 py-0.5 rounded-full">Active</span>
+                        {% else %}
+                            <span class="bg-gray-100 text-gray-500 text-xs font-semibold px-2 py-0.5 rounded-full">Inactive</span>
+                        {% endif %}
+                    </div>
+                    {% if section.subtitle %}
+                        <p class="text-sm text-gray-500 mb-2">{{ section.subtitle }}</p>
+                    {% endif %}
+                    <div class="flex items-center gap-4 text-xs text-gray-500">
+                        <span>📋 {{ section.items.count }} services</span>
+                        <span>🏠 Shows {{ section.home_display_limit }} on home</span>
+                    </div>
+                </div>
+
+                <div class="flex gap-2 ml-4">
+                    <a href="{% url 'home_section_detail' section.id %}"
+                       class="text-xs font-semibold bg-primary-100 hover:bg-primary-200 text-primary-700 py-2 px-3 rounded-lg">
+                        Manage Services
+                    </a>
+                    <a href="{% url 'home_section_edit' section.id %}"
+                       class="text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 px-3 rounded-lg">
+                        Edit
+                    </a>
+                    <form method="post" action="{% url 'home_section_delete' section.id %}"
+                          onsubmit="return confirm('Delete this section?')" class="inline">
+                        {% csrf_token %}
+                        <button type="submit"
+                                class="text-xs font-semibold bg-red-50 hover:bg-red-100 text-red-600 py-2 px-3 rounded-lg">
+                            Delete
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="bg-white rounded-2xl border border-gray-100 p-12 text-center">
+            <p class="text-gray-500 mb-4">No home sections yet.</p>
+            <a href="{% url 'home_section_add' %}"
+               class="inline-block bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2 px-6 rounded-lg">
+                Add First Section
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

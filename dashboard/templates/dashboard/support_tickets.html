@@ -1,0 +1,59 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}Support Tickets{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+    <div class="mb-6">
+        <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">Support Tickets</h1>
+        <p class="text-gray-500 mt-1">Customer support requests.</p>
+    </div>
+
+    <!-- Filter tabs -->
+    <div class="flex gap-2 mb-6 flex-wrap">
+        <a href="{% url 'support_tickets' %}" class="px-4 py-2 rounded-lg text-sm font-semibold {% if not current_status %}bg-primary-600 text-white{% else %}bg-white text-gray-700 border border-gray-200{% endif %}">All</a>
+        <a href="?status=OPEN" class="px-4 py-2 rounded-lg text-sm font-semibold {% if current_status == 'OPEN' %}bg-primary-600 text-white{% else %}bg-white text-gray-700 border border-gray-200{% endif %}">Open</a>
+        <a href="?status=IN_PROGRESS" class="px-4 py-2 rounded-lg text-sm font-semibold {% if current_status == 'IN_PROGRESS' %}bg-primary-600 text-white{% else %}bg-white text-gray-700 border border-gray-200{% endif %}">In Progress</a>
+        <a href="?status=RESOLVED" class="px-4 py-2 rounded-lg text-sm font-semibold {% if current_status == 'RESOLVED' %}bg-primary-600 text-white{% else %}bg-white text-gray-700 border border-gray-200{% endif %}">Resolved</a>
+    </div>
+
+    <div class="space-y-3">
+        {% for ticket in page_obj %}
+        <a href="{% url 'support_ticket_detail' ticket.id %}" class="block bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition">
+            <div class="flex items-start justify-between">
+                <div class="flex-1">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="text-xs text-gray-400">#{{ ticket.id }}</span>
+                        <h2 class="font-semibold text-gray-900">{{ ticket.subject }}</h2>
+                    </div>
+                    <div class="text-sm text-gray-500">
+                        {{ ticket.customer.user.get_full_name|default:ticket.customer.user.username }}
+                        · {{ ticket.get_category_display }}
+                        · {{ ticket.updated_at|date:"M d, Y H:i" }}
+                    </div>
+                </div>
+                <span class="text-xs font-semibold px-2 py-1 rounded-full
+                    {% if ticket.status == 'OPEN' %}bg-orange-100 text-orange-700
+                    {% elif ticket.status == 'IN_PROGRESS' %}bg-blue-100 text-blue-700
+                    {% elif ticket.status == 'RESOLVED' %}bg-green-100 text-green-700
+                    {% else %}bg-gray-100 text-gray-700{% endif %}">
+                    {{ ticket.get_status_display }}
+                </span>
+            </div>
+        </a>
+        {% empty %}
+        <div class="bg-white rounded-2xl border border-gray-100 p-12 text-center text-gray-500">
+            No tickets found.
+        </div>
+        {% endfor %}
+    </div>
+
+    {% if page_obj.has_other_pages %}
+    <div class="mt-6 flex justify-center gap-2 text-sm">
+        {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}&status={{ current_status }}" class="px-3 py-1 border border-gray-300 rounded-lg">Previous</a>{% endif %}
+        <span class="px-3 py-1">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}&status={{ current_status }}" class="px-3 py-1 border border-gray-300 rounded-lg">Next</a>{% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

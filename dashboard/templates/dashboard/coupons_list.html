@@ -1,0 +1,104 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}Coupons{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+    <div class="flex justify-between items-start mb-6">
+        <div>
+            <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">Coupons</h1>
+            <p class="text-gray-500 mt-1">Coupon codes customers can apply at checkout.</p>
+        </div>
+        <a href="{% url 'coupon_add' %}"
+           class="bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2 px-4 rounded-lg flex items-center gap-2 shadow-sm">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            Add Coupon
+        </a>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {% for coupon in coupons %}
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition">
+            <!-- Coupon header -->
+            <div class="bg-gradient-to-r from-primary-500 to-primary-700 p-4 text-white">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <div class="text-xs opacity-80 uppercase tracking-wide">Code</div>
+                        <div class="text-xl font-bold tracking-wider">{{ coupon.code }}</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xs opacity-80">You save</div>
+                        <div class="text-2xl font-bold">
+                            {% if coupon.discount_type == 'PERCENTAGE' %}{{ coupon.value|floatformat:0 }}%{% else %}₹{{ coupon.value|floatformat:0 }}{% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Body -->
+            <div class="p-4">
+                {% if coupon.description %}
+                    <p class="text-sm text-gray-700 mb-3">{{ coupon.description }}</p>
+                {% endif %}
+
+                <div class="grid grid-cols-2 gap-2 text-xs text-gray-500 mb-4">
+                    <div>Min order: <strong class="text-gray-700">₹{{ coupon.min_order_amount|floatformat:0 }}</strong></div>
+                    {% if coupon.max_discount %}
+                    <div>Max: <strong class="text-gray-700">₹{{ coupon.max_discount|floatformat:0 }}</strong></div>
+                    {% endif %}
+                    <div>Used: <strong class="text-gray-700">{{ coupon.times_used }}{% if coupon.total_usage_limit %}/{{ coupon.total_usage_limit }}{% endif %}</strong></div>
+                    <div>Per user: <strong class="text-gray-700">{{ coupon.per_customer_limit }}</strong></div>
+                    {% if coupon.valid_until %}
+                    <div class="col-span-2">Until: <strong class="text-gray-700">{{ coupon.valid_until|date:"M d, Y" }}</strong></div>
+                    {% endif %}
+                </div>
+
+                <div class="flex items-center justify-between mb-3">
+                    {% if coupon.is_active %}
+                        <span class="bg-green-100 text-green-700 text-xs font-semibold px-2 py-0.5 rounded-full">Active</span>
+                    {% else %}
+                        <span class="bg-gray-100 text-gray-500 text-xs font-semibold px-2 py-0.5 rounded-full">Inactive</span>
+                    {% endif %}
+                    <a href="{% url 'coupon_usage' coupon.id %}" class="text-xs text-primary-600 hover:underline">
+                        View {{ coupon.usages.count }} usages →
+                    </a>
+                </div>
+
+                <div class="flex gap-2">
+                    <a href="{% url 'coupon_edit' coupon.id %}"
+                       class="flex-1 text-center text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-lg">
+                        Edit
+                    </a>
+                    <form method="post" action="{% url 'coupon_delete' coupon.id %}"
+                          onsubmit="return confirm('Delete this coupon?')" class="flex-1">
+                        {% csrf_token %}
+                        <button type="submit"
+                                class="w-full text-xs font-semibold bg-red-50 hover:bg-red-100 text-red-600 py-2 rounded-lg">
+                            Delete
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-span-full bg-white rounded-2xl border border-gray-100 p-12 text-center">
+            <p class="text-gray-500 mb-4">No coupons yet.</p>
+            <a href="{% url 'coupon_add' %}"
+               class="inline-block bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2 px-6 rounded-lg">
+                Create First Coupon
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

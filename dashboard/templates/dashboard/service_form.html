@@ -1,0 +1,117 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}{% if is_edit %}Edit{% else %}Add{% endif %} Service{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="flex items-center gap-3 mb-6">
+        <a href="{% if subcategory %}{% url 'services_list_sub' subcategory.id %}{% else %}{% url 'services_list_cat' category.id %}{% endif %}"
+           class="text-gray-500 hover:text-gray-700">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+        </a>
+        <div>
+            <div class="text-xs text-gray-500 mb-1">
+                <a href="{% url 'categories_list' %}" class="hover:text-primary-600">Categories</a>
+                <span class="mx-1">/</span>
+                {% if subcategory %}
+                    <a href="{% url 'subcategories_list' category.id %}" class="hover:text-primary-600">{{ category.name }}</a>
+                    <span class="mx-1">/</span>
+                    <a href="{% url 'services_list_sub' subcategory.id %}" class="hover:text-primary-600">{{ subcategory.name }}</a>
+                {% else %}
+                    <a href="{% url 'services_list_cat' category.id %}" class="hover:text-primary-600">{{ category.name }}</a>
+                {% endif %}
+            </div>
+            <h1 class="text-2xl font-bold text-gray-900">
+                {% if is_edit %}Edit Service{% else %}Add Service{% endif %}
+            </h1>
+        </div>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <form method="post" enctype="multipart/form-data" class="space-y-5">
+            {% csrf_token %}
+
+            <!-- Image upload -->
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Service Image</label>
+                {% if is_edit and service.image %}
+                    <div class="mb-3">
+                        <img src="{{ service.image.url }}" alt="Current image" class="w-40 h-32 rounded-xl object-cover border border-gray-200">
+                        <p class="text-xs text-gray-500 mt-1">Current image. Upload a new one to replace.</p>
+                    </div>
+                {% endif %}
+                <input type="file" name="image" accept="image/*"
+                       class="w-full text-sm border border-gray-300 rounded-lg p-2 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary-100 file:text-primary-700 hover:file:bg-primary-200">
+            </div>
+
+            <!-- Name -->
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Name *</label>
+                <input type="text" name="name" required
+                       value="{% if is_edit %}{{ service.name }}{% endif %}"
+                       placeholder="e.g. Foam-jet AC service"
+                       class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+            </div>
+
+            <!-- Description -->
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Description</label>
+                <textarea name="description" rows="4"
+                          placeholder="Detailed description shown to customers"
+                          class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">{% if is_edit %}{{ service.description }}{% endif %}</textarea>
+            </div>
+
+            <!-- Price + Duration -->
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Price (₹) *</label>
+                    <input type="number" name="price" step="0.01" min="0" required
+                           value="{% if is_edit %}{{ service.price }}{% else %}0{% endif %}"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Duration (mins)</label>
+                    <input type="number" name="duration_minutes" min="1"
+                           value="{% if is_edit %}{{ service.duration_minutes }}{% else %}60{% endif %}"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                </div>
+            </div>
+
+            <!-- Active toggle -->
+            <div>
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" name="is_active"
+                           {% if is_edit and service.is_active or not is_edit %}checked{% endif %}
+                           class="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                    <div>
+                        <div class="text-sm font-semibold text-gray-700">Active</div>
+                        <div class="text-xs text-gray-500">Show this service in the customer app</div>
+                    </div>
+                </label>
+            </div>
+
+            <!-- Buttons -->
+            <div class="flex gap-3 pt-4 border-t border-gray-100">
+                <a href="{% if subcategory %}{% url 'services_list_sub' subcategory.id %}{% else %}{% url 'services_list_cat' category.id %}{% endif %}"
+                   class="flex-1 text-center bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold py-2.5 rounded-lg">
+                    Cancel
+                </a>
+                <button type="submit"
+                        class="flex-1 bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2.5 rounded-lg">
+                    {% if is_edit %}Save Changes{% else %}Create Service{% endif %}
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,26 @@
+{% extends "admin/change_list.html" %}
+
+{% block content_title %}
+<h1>Bookings</h1>
+
+<div style="background:#f8f8f8;border:1px solid #ddd;border-radius:6px;padding:14px 18px;margin-bottom:16px;color:#222;">
+
+  <strong style="color:#222;">Total Revenue (Paid Bookings):</strong>
+  <span style="color:#222;">₹{{ total_revenue }}</span>
+
+  <br><br>
+
+  <strong style="color:#222;">Revenue by Vendor:</strong>
+
+  <ul style="margin:6px 0 0 18px;color:#222;">
+    {% for row in per_vendor_revenue %}
+      <li style="color:#222;">
+        {{ row.vendor__user__username }}: ₹{{ row.total }}
+      </li>
+    {% empty %}
+      <li style="color:#222;">No paid bookings yet.</li>
+    {% endfor %}
+  </ul>
+
+</div>
+{% endblock %}

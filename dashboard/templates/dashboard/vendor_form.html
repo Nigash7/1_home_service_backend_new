@@ -1,0 +1,258 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}{% if is_edit %}Edit{% else %}Add{% endif %} Vendor{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="flex items-center gap-3 mb-6">
+        <a href="{% if is_edit %}{% url 'vendor_detail' vendor.id %}{% else %}{% url 'vendors_list' %}{% endif %}"
+           class="text-gray-500 hover:text-gray-700">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+        </a>
+        <h1 class="text-2xl font-bold text-gray-900">
+            {% if is_edit %}Edit Vendor{% else %}Add Vendor{% endif %}
+        </h1>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <form method="post" class="space-y-5" enctype="multipart/form-data">
+            {% csrf_token %}
+
+            <!-- Personal Info -->
+<!-- Login Credentials -->
+            <div class="border border-primary-200 bg-primary-50/30 rounded-xl p-4 space-y-4">
+                <div class="text-sm font-semibold text-primary-700">🔐 Login Credentials</div>
+
+               <div>
+                    <label class="block text-xs font-semibold text-gray-700 mb-1">Username *</label>
+                    <input type="text" name="username" required
+                           value="{% if is_edit %}{{ vendor.user.username }}{% endif %}"
+                           placeholder="e.g. ravi_plumber"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                    <p class="text-xs text-gray-500 mt-1">Vendor logs into the app with this username.</p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-gray-700 mb-1">
+                        {% if is_edit %}New Password{% else %}Password *{% endif %}
+                    </label>
+                    <input type="text" name="{% if is_edit %}new_password{% else %}password{% endif %}" {% if not is_edit %}required{% endif %}
+                           placeholder="{% if is_edit %}Leave blank to keep current password{% else %}Set a password{% endif %}"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                    {% if is_edit %}<p class="text-xs text-gray-500 mt-1">Only fill this to reset the password.</p>{% else %}<p class="text-xs text-gray-500 mt-1">Share this with the vendor. Shown as plain text so you can copy it.</p>{% endif %}
+                </div>
+            </div>
+
+            <!-- Personal Info -->
+            <div class="border border-gray-200 rounded-xl p-4 space-y-4">
+                <div class="text-sm font-semibold text-gray-700">Personal Information</div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-700 mb-1">First Name *</label>
+                        <input type="text" name="first_name" required
+                               value="{% if is_edit %}{{ vendor.user.first_name }}{% endif %}"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-700 mb-1">Last Name</label>
+                        <input type="text" name="last_name"
+                               value="{% if is_edit %}{{ vendor.user.last_name }}{% endif %}"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-gray-700 mb-1">Phone Number</label>
+                    <input type="text" name="phone_number"
+                           value="{% if is_edit %}{{ vendor.user.phone_number|default:'' }}{% endif %}"
+                           placeholder="Optional"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-gray-700 mb-1">Email</label>
+                    <input type="email" name="email"
+                           value="{% if is_edit %}{{ vendor.user.email }}{% endif %}"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                </div>
+            </div>
+
+            <!-- Service Info -->
+            <div class="border border-gray-200 rounded-xl p-4 space-y-4">
+                <div class="text-sm font-semibold text-gray-700">Service Information</div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-gray-700 mb-1">Service Area *</label>
+                    <input type="text" name="service_area" required
+                           value="{% if is_edit %}{{ vendor.service_area }}{% endif %}"
+                           placeholder="e.g. Chennai South, Adyar Zone"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-gray-700 mb-1">Address</label>
+                    <textarea name="address" rows="2"
+                              class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">{% if is_edit %}{{ vendor.address }}{% endif %}</textarea>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-700 mb-1">Latitude</label>
+                        <input type="number" step="any" name="latitude" id="lat-input"
+                               value="{% if is_edit and vendor.latitude %}{{ vendor.latitude }}{% endif %}"
+                               placeholder="e.g. 13.0827"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-700 mb-1">Longitude</label>
+                        <input type="number" step="any" name="longitude" id="lng-input"
+                               value="{% if is_edit and vendor.longitude %}{{ vendor.longitude }}{% endif %}"
+                               placeholder="e.g. 80.2707"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                    </div>
+                </div>
+
+                <!-- Location picker map -->
+                <div>
+                    <label class="block text-xs font-semibold text-gray-700 mb-2">Pick Location on Map</label>
+                    <div id="picker-map" class="w-full h-64 rounded-lg border border-gray-300"></div>
+                    <p class="text-xs text-gray-500 mt-1">Click on the map to set the vendor's location, or type lat/lng above.</p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-gray-700 mb-2">Categories *</label>
+                    <div class="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-3">
+                        {% for cat in categories %}
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" name="categories" value="{{ cat.id }}"
+                                   {% if is_edit and cat.id in vendor_category_ids %}checked{% endif %}
+                                   class="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                            <span class="text-sm text-gray-700">{{ cat.name }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">Select all categories this vendor can work in</p>
+                </div>
+            </div>
+
+            <!-- Status -->
+            <div class="border border-gray-200 rounded-xl p-4 space-y-4">
+                <div class="text-sm font-semibold text-gray-700">Status</div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-gray-700 mb-1">Verification Status</label>
+                    <select name="verification_status"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                        <option value="PENDING" {% if is_edit and vendor.verification_status == 'PENDING' %}selected{% endif %}>Pending Review</option>
+                        <option value="VERIFIED" {% if is_edit and vendor.verification_status == 'VERIFIED' %}selected{% endif %}>Verified</option>
+                        <option value="REJECTED" {% if is_edit and vendor.verification_status == 'REJECTED' %}selected{% endif %}>Rejected</option>
+                    </select>
+                </div>
+                <div class="border-t border-gray-100 pt-4">
+    <div class="text-sm font-semibold text-gray-700 mb-3">Documents</div>
+    <div id="doc-rows" class="space-y-3">
+        <div class="flex gap-2 doc-row">
+            <select name="doc_type[]" class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                <option value="ID_PROOF">ID Proof</option>
+                <option value="ADDRESS_PROOF">Address Proof</option>
+                <option value="TRADE_CERT">Trade Certificate</option>
+                <option value="OTHER">Other</option>
+            </select>
+            <input type="file" name="doc_file[]" class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm">
+        </div>
+    </div>
+    <button type="button" onclick="addDocRow()"
+            class="mt-2 text-sm text-primary-600 font-semibold">+ Add another document</button>
+</div>
+
+<script>
+function addDocRow() {
+    const container = document.getElementById('doc-rows');
+    const row = container.querySelector('.doc-row').cloneNode(true);
+    row.querySelectorAll('input, select').forEach(el => el.value = '');
+    container.appendChild(row);
+}
+</script>
+
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" name="is_available"
+                           {% if is_edit and vendor.is_available or not is_edit %}checked{% endif %}
+                           class="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                    <div>
+                        <div class="text-sm font-semibold text-gray-700">Available</div>
+                        <div class="text-xs text-gray-500">Can be assigned to new bookings</div>
+                    </div>
+                </label>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-700 mb-1">Availability Status</label>
+                    <select name="status"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                        <option value="AVAILABLE" {% if is_edit and vendor.status == 'AVAILABLE' %}selected{% endif %}>Available (free for work)</option>
+                        <option value="BUSY" {% if is_edit and vendor.status == 'BUSY' %}selected{% endif %}>Busy (on a job)</option>
+                        <option value="OFFLINE" {% if is_edit and vendor.status == 'OFFLINE' %}selected{% endif %}>Offline (not working)</option>
+                    </select>
+                    <p class="text-xs text-gray-500 mt-1">Busy is set automatically when a job is active. Offline hides them from assignment.</p>
+                </div>
+            </div>
+
+            <div class="flex gap-3 pt-4 border-t border-gray-100">
+                <a href="{% if is_edit %}{% url 'vendor_detail' vendor.id %}{% else %}{% url 'vendors_list' %}{% endif %}"
+                   class="flex-1 text-center bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold py-2.5 rounded-lg">
+                    Cancel
+                </a>
+                <button type="submit"
+                        class="flex-1 bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2.5 rounded-lg">
+                    {% if is_edit %}Save Changes{% else %}Create Vendor{% endif %}
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const latInput = document.getElementById('lat-input');
+        const lngInput = document.getElementById('lng-input');
+
+        // Default center: Chennai
+        let startLat = parseFloat(latInput.value) || 13.0827;
+        let startLng = parseFloat(lngInput.value) || 80.2707;
+
+        const map = L.map('picker-map').setView([startLat, startLng], 12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        let marker = null;
+        if (latInput.value && lngInput.value) {
+            marker = L.marker([startLat, startLng]).addTo(map);
+        }
+
+        map.on('click', function (e) {
+            const { lat, lng } = e.latlng;
+            latInput.value = lat.toFixed(6);
+            lngInput.value = lng.toFixed(6);
+            if (marker) {
+                marker.setLatLng([lat, lng]);
+            } else {
+                marker = L.marker([lat, lng]).addTo(map);
+            }
+        });
+
+        // Fix map rendering inside forms
+        setTimeout(() => map.invalidateSize(), 200);
+    });
+</script>

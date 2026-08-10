@@ -1,0 +1,34 @@
+from django.contrib import admin
+from django.urls import path, include
+from django.conf import settings
+from django.conf.urls.static import static
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+
+urlpatterns = [
+    path('', include('dashboard.urls')),
+    path('hjssjiasjci/', admin.site.urls),
+
+    # Login endpoints used by BOTH the Customer app and the Vendor app.
+    # POST username + password -> get back access + refresh tokens.
+    path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+
+    # App-specific APIs
+    path('api/auth/', include('accounts.urls')),
+    path('api/services/', include('services.urls')),
+    path('api/customers/', include('customers.urls')),
+    path('api/vendors/', include('vendors.urls')),
+    path('api/bookings/', include('bookings.urls')),
+    path('api/promotions/', include('promotions.urls')),
+    path('api/home/', include('home_sections.urls')),
+    path('api/curations/', include('curations.urls')),
+    path('api/forms/', include('service_forms.urls')),
+    path('api/reviews/', include('reviews.urls')),
+    path('api/discounts/', include('discounts.urls')),
+    path('api/support/', include('support.urls')),
+    path('api/notifications/', include('notifications.urls')),
+    
+]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

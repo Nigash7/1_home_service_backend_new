@@ -1,0 +1,21 @@
+{% extends "admin/base_site.html" %}
+
+{% block branding %}
+<h1 id="site-name">
+    <a href="/admin/dashboard/" style="text-decoration: none;">
+        🏠 Home Service Admin
+    </a>
+</h1>
+{% endblock %}
+
+{% block nav-global %}
+<div style="padding: 10px 40px; background: #f8f5ff; border-bottom: 1px solid #e0d5f5;">
+    <a href="/admin/dashboard/" style="color: #7c4dff; font-weight: 600; text-decoration: none; margin-right: 20px;">
+        📊 Dashboard
+    </a>
+    <a href="/admin/bookings/booking/" style="color: #666; text-decoration: none; margin-right: 20px;">Bookings</a>
+    <a href="/admin/customers/customer/" style="color: #666; text-decoration: none; margin-right: 20px;">Customers</a>
+    <a href="/admin/vendors/vendor/" style="color: #666; text-decoration: none; margin-right: 20px;">Vendors</a>
+    <a href="/admin/services/servicecategory/" style="color: #666; text-decoration: none;">Services</a>
+</div>
+{% endblock %}

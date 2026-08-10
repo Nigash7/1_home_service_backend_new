@@ -1,0 +1,92 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}Categories{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <div class="flex justify-between items-start mb-6">
+        <div>
+            <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">Categories</h1>
+            <p class="text-gray-500 mt-1">Manage service categories.</p>
+        </div>
+        <a href="{% url 'category_add' %}"
+           class="bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2 px-4 rounded-lg flex items-center gap-2 shadow-sm">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            Add Category
+        </a>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <!-- Category grid -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        {% for category in categories %}
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition">
+            <!-- Icon -->
+            
+            <a href="{% url 'subcategories_list' category.id %}" class="block aspect-square bg-gray-50 flex items-center justify-center relative">
+                {% if category.icon %}
+                    <img src="{{ category.icon.url }}" alt="{{ category.name }}" class="w-full h-full object-cover">
+                {% else %}
+                    <svg class="w-16 h-16 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                    </svg>
+                {% endif %}
+
+                <!-- Active badge -->
+                {% if category.is_active %}
+                    <span class="absolute top-2 right-2 bg-green-100 text-green-700 text-xs font-semibold px-2 py-0.5 rounded-full">Active</span>
+                {% else %}
+                    <span class="absolute top-2 right-2 bg-gray-100 text-gray-500 text-xs font-semibold px-2 py-0.5 rounded-full">Inactive</span>
+                {% endif %}
+
+               <!-- Sort order badge -->
+                <span class="absolute top-2 left-2 bg-white/90 text-gray-700 text-xs font-semibold px-2 py-0.5 rounded-full shadow-sm">
+                    #{{ category.sort_order }}
+                </span>
+            </a>
+
+            <!-- Info -->
+            <div class="p-4">
+              <a href="{% url 'subcategories_list' category.id %}" class="block hover:text-primary-600">
+                    <div class="font-semibold text-gray-900 truncate">{{ category.name }}</div>
+                    <div class="text-sm text-gray-500 mt-1">From ₹{{ category.base_price|floatformat:0 }}</div>
+                </a>
+
+                <!-- Actions -->
+                <div class="flex gap-2 mt-4">
+                    <a href="{% url 'services_list_cat' category.id %}"
+                       class="flex-1 text-center text-xs font-semibold bg-primary-100 hover:bg-primary-200 text-primary-700 py-2 rounded-lg">
+                        Services
+                    </a>
+                    <a href="{% url 'category_edit' category.id %}"
+                       class="flex-1 text-center text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-lg">
+                        Edit
+                    </a>
+                    <form method="post" action="{% url 'category_delete' category.id %}"
+                          onsubmit="return confirm('Delete this category? This cannot be undone.')" class="flex-1">
+                        {% csrf_token %}
+                        <button type="submit"
+                                class="w-full text-xs font-semibold bg-red-50 hover:bg-red-100 text-red-600 py-2 rounded-lg">
+                            Delete
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-span-full text-center py-12 text-gray-500">
+            No categories yet. <a href="{% url 'category_add' %}" class="text-primary-600 font-semibold">Add one</a>.
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

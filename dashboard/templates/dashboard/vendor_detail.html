@@ -1,0 +1,185 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}{{ vendor.user.get_full_name }}{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+    <div class="flex items-center gap-3 mb-6">
+        <a href="{% url 'vendors_list' %}" class="text-gray-500 hover:text-gray-700">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+        </a>
+        <div class="flex-1">
+            <h1 class="text-2xl font-bold text-gray-900">{{ vendor.user.get_full_name|default:vendor.user.username }}</h1>
+            <p class="text-sm text-gray-500">Vendor ID: #{{ vendor.id }}</p>
+        </div>
+        <span class="text-sm font-semibold px-3 py-1 rounded-full
+            {% if vendor.verification_status == 'VERIFIED' %}bg-green-100 text-green-700
+            {% elif vendor.verification_status == 'PENDING' %}bg-orange-100 text-orange-700
+            {% else %}bg-red-100 text-red-700{% endif %}">
+            {{ vendor.get_verification_status_display }}
+        </span>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <!-- Left: profile -->
+        <div class="lg:col-span-2 space-y-6">
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                <h2 class="text-base font-semibold text-gray-900 mb-4">Profile</h2>
+                <div class="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <div class="text-gray-500">Phone</div>
+                        <div class="text-gray-900 font-medium">{{ vendor.user.phone_number|default:"—" }}</div>
+                    </div>
+                    <div>
+                        <div class="text-gray-500">Email</div>
+                        <div class="text-gray-900 font-medium">{{ vendor.user.email|default:"—" }}</div>
+                    </div>
+                    <div class="col-span-2">
+                        <div class="text-gray-500">Categories</div>
+                        <div class="flex flex-wrap gap-2 mt-1">
+                            {% for cat in vendor.categories.all %}
+                                <span class="text-xs bg-primary-100 text-primary-700 px-2 py-1 rounded-full">{{ cat.name }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% if vendor.latitude and vendor.longitude %}
+                    <div class="col-span-2">
+                        <div class="text-gray-500">Location</div>
+                        <div class="text-gray-900 text-xs">{{ vendor.latitude }}, {{ vendor.longitude }}</div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Jobs -->
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                <h2 class="text-base font-semibold text-gray-900 mb-4">Jobs ({{ jobs_page.paginator.count }})</h2>
+                <div class="space-y-2">
+                    {% for job in jobs_page %}
+                    <a href="{% url 'booking_detail' job.id %}" class="block border border-gray-100 rounded-lg p-3 hover:bg-gray-50">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <div class="text-sm font-medium">#{{ job.id }} · {{ job.category.name }}</div>
+                                <div class="text-xs text-gray-500">{{ job.customer.user.get_full_name }} · {{ job.preferred_date|date:"M d, Y" }}</div>
+                            </div>
+                            <span class="text-xs font-semibold px-2 py-1 rounded-full
+                                {% if job.status == 'COMPLETED' %}bg-green-100 text-green-700
+                                {% elif job.status == 'CANCELLED' %}bg-red-100 text-red-700
+                                {% else %}bg-blue-100 text-blue-700{% endif %}">
+                                {{ job.get_status_display }}
+                            </span>
+                        </div>
+                    </a>
+                    {% empty %}
+                    <p class="text-sm text-gray-500">No jobs yet.</p>
+                    {% endfor %}
+                </div>
+                {% if jobs_page.has_other_pages %}
+                <div class="mt-4 flex justify-center gap-2 text-sm">
+                    {% if jobs_page.has_previous %}<a href="?jobs_page={{ jobs_page.previous_page_number }}" class="px-3 py-1 border border-gray-300 rounded-lg">Prev</a>{% endif %}
+                    <span class="px-3 py-1">{{ jobs_page.number }} / {{ jobs_page.paginator.num_pages }}</span>
+                    {% if jobs_page.has_next %}<a href="?jobs_page={{ jobs_page.next_page_number }}" class="px-3 py-1 border border-gray-300 rounded-lg">Next</a>{% endif %}
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Reviews -->
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-base font-semibold text-gray-900">Reviews ({{ total_reviews }})</h2>
+                    {% if total_reviews > 0 %}
+                    <div class="text-sm font-semibold text-yellow-600">
+                        ⭐ {{ avg_rating }}
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="space-y-3">
+                    {% for review in reviews_page %}
+                    <div class="border-b border-gray-100 pb-3 last:border-0">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <div class="text-sm font-medium">
+                                    {{ review.customer.user.get_full_name|default:"Customer" }}
+                                </div>
+                                <div class="text-xs text-gray-500">
+                                    {{ review.service_category.name }} · {{ review.created_at|date:"M d, Y" }}
+                                </div>
+                            </div>
+                            <div class="text-sm text-yellow-600">
+                                {% for i in "12345" %}{% if forloop.counter <= review.rating %}⭐{% endif %}{% endfor %}
+                            </div>
+                        </div>
+                        {% if review.comment %}
+                        <div class="text-sm text-gray-700 mt-2">{{ review.comment }}</div>
+                        {% endif %}
+                    </div>
+                    {% empty %}
+                    <p class="text-sm text-gray-500">No reviews yet.</p>
+                    {% endfor %}
+                </div>
+                {% if reviews_page.has_other_pages %}
+                <div class="mt-4 flex justify-center gap-2 text-sm">
+                    {% if reviews_page.has_previous %}<a href="?reviews_page={{ reviews_page.previous_page_number }}" class="px-3 py-1 border border-gray-300 rounded-lg">Prev</a>{% endif %}
+                    <span class="px-3 py-1">{{ reviews_page.number }} / {{ reviews_page.paginator.num_pages }}</span>
+                    {% if reviews_page.has_next %}<a href="?reviews_page={{ reviews_page.next_page_number }}" class="px-3 py-1 border border-gray-300 rounded-lg">Next</a>{% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Right: actions -->
+        <div class="space-y-6">
+            {% if vendor.verification_status == 'PENDING' %}
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                <h2 class="text-base font-semibold text-gray-900 mb-4">Verification</h2>
+                <form method="post" action="{% url 'verify_vendor' vendor.id %}" class="space-y-2">
+                    {% csrf_token %}
+                    <button type="submit" name="action" value="verify" class="w-full bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-2 rounded-lg">
+                        ✓ Verify Vendor
+                    </button>
+                    <button type="submit" name="action" value="reject" class="w-full bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2 rounded-lg"
+                            onclick="return confirm('Reject this vendor?')">
+                        ✗ Reject
+                    </button>
+                </form>
+            </div>
+            {% endif %}
+
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                <h2 class="text-base font-semibold text-gray-900 mb-4">Stats</h2>
+                <div class="space-y-3 text-sm">
+                    <div class="flex justify-between">
+                        <span class="text-gray-500">Total Jobs</span>
+                        <span class="font-semibold">{{ jobs_page.paginator.count }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-500">Average Rating</span>
+                        <span class="font-semibold">{{ avg_rating }} ⭐</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-500">Total Reviews</span>
+                        <span class="font-semibold">{{ total_reviews }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-500">Availability</span>
+                        <span class="font-semibold">
+                            {% if vendor.is_available %}<span class="text-green-600">✓ Available</span>
+                            {% else %}<span class="text-gray-500">✗ Not Available</span>{% endif %}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

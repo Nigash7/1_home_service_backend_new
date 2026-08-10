@@ -1,0 +1,186 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <!-- Header -->
+    <div class="mb-8">
+        <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">Good day, {{ admin_user.full_name }} 👋</h1>
+        <p class="text-gray-500 mt-1">Here's what's happening on your platform today.</p>
+    </div>
+
+    <!-- Stats grid -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+            <div class="flex items-center justify-between mb-2">
+                <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Total Bookings</div>
+                <div class="w-8 h-8 bg-primary-100 text-primary-600 rounded-lg flex items-center justify-center">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                </div>
+            </div>
+            <div class="text-2xl lg:text-3xl font-bold text-gray-900">{{ total_bookings }}</div>
+            <div class="text-xs text-gray-500 mt-1">{{ today_bookings }} today · {{ week_bookings }} this week</div>
+        </div>
+
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+            <div class="flex items-center justify-between mb-2">
+                <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Pending</div>
+                <div class="w-8 h-8 bg-orange-100 text-orange-600 rounded-lg flex items-center justify-center">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                </div>
+            </div>
+            <div class="text-2xl lg:text-3xl font-bold text-gray-900">{{ pending_bookings }}</div>
+            <div class="text-xs text-gray-500 mt-1">Awaiting assignment</div>
+        </div>
+
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+            <div class="flex items-center justify-between mb-2">
+                <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Revenue</div>
+                <div class="w-8 h-8 bg-green-100 text-green-600 rounded-lg flex items-center justify-center">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                </div>
+            </div>
+            <div class="text-2xl lg:text-3xl font-bold text-gray-900">₹{{ total_revenue|floatformat:0 }}</div>
+            <div class="text-xs text-gray-500 mt-1">₹{{ month_revenue|floatformat:0 }} this month</div>
+        </div>
+
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+            <div class="flex items-center justify-between mb-2">
+                <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Customers</div>
+                <div class="w-8 h-8 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z"/></svg>
+                </div>
+            </div>
+            <div class="text-2xl lg:text-3xl font-bold text-gray-900">{{ total_customers }}</div>
+            <div class="text-xs text-gray-500 mt-1">+{{ new_customers_week }} this week</div>
+        </div>
+    </div>
+
+    <!-- Chart + Top Categories -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
+        <div class="lg:col-span-2 bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+            <h2 class="text-base font-semibold text-gray-900 mb-4">Bookings Trend</h2>
+            <div class="h-64">
+                <canvas id="bookingsChart"></canvas>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+            <h2 class="text-base font-semibold text-gray-900 mb-4">Top Categories</h2>
+            <div class="space-y-3">
+                {% for cat in top_categories %}
+                <div class="flex items-center justify-between">
+                    <span class="text-sm text-gray-700">{{ cat.name }}</span>
+                    <span class="text-xs bg-primary-100 text-primary-700 px-2 py-1 rounded-full font-semibold">{{ cat.booking_count }}</span>
+                </div>
+                {% empty %}
+                <p class="text-sm text-gray-500">No bookings yet.</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Bookings -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="p-6 border-b border-gray-100">
+            <h2 class="text-base font-semibold text-gray-900">Recent Bookings</h2>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead>
+                    <tr class="bg-gray-50 text-left">
+                        <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">ID</th>
+                        <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Customer</th>
+                        <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Category</th>
+                        <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                        <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for booking in recent_bookings %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4 text-sm font-medium text-gray-900">#{{ booking.id }}</td>
+                        <td class="px-6 py-4 text-sm text-gray-700">{{ booking.customer.user.get_full_name|default:booking.customer.user.username }}</td>
+                        <td class="px-6 py-4 text-sm text-gray-700">{{ booking.category.name }}</td>
+                        <td class="px-6 py-4">
+                            <span class="text-xs font-semibold px-2 py-1 rounded-full
+                                {% if booking.status == 'PENDING' %}bg-orange-100 text-orange-700
+                                {% elif booking.status == 'ASSIGNED' %}bg-blue-100 text-blue-700
+                                {% elif booking.status == 'IN_PROGRESS' %}bg-purple-100 text-purple-700
+                                {% elif booking.status == 'COMPLETED' %}bg-green-100 text-green-700
+                                {% else %}bg-red-100 text-red-700{% endif %}">
+                                {{ booking.get_status_display }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-500">{{ booking.created_at|date:"M d, Y" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="px-6 py-8 text-center text-gray-500">No bookings yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if page_obj.paginator.num_pages > 1 %}
+<div class="flex items-center justify-between gap-3 px-6 py-4 border-t border-gray-100 bg-gray-50">
+    <p class="text-xs text-gray-500">
+        Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ page_obj.paginator.count }}
+    </p>
+    <div class="flex items-center gap-1">
+        {% if page_obj.has_previous %}
+        <a href="?page={{ page_obj.previous_page_number }}#recent"
+           class="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-100">Prev</a>
+        {% else %}
+        <span class="px-3 py-1.5 text-xs font-semibold text-gray-300 bg-white border border-gray-100 rounded-lg cursor-not-allowed">Prev</span>
+        {% endif %}
+
+        {% for num in page_obj.paginator.page_range %}
+            {% if num == page_obj.number %}
+            <span class="px-3 py-1.5 text-xs font-bold text-white bg-primary-600 rounded-lg">{{ num }}</span>
+            {% elif num > page_obj.number|add:"-3" and num < page_obj.number|add:"3" %}
+            <a href="?page={{ num }}#recent"
+               class="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-100">{{ num }}</a>
+            {% endif %}
+        {% endfor %}
+
+        {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}#recent"
+           class="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-100">Next</a>
+        {% else %}
+        <span class="px-3 py-1.5 text-xs font-semibold text-gray-300 bg-white border border-gray-100 rounded-lg cursor-not-allowed">Next</span>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    const ctx = document.getElementById('bookingsChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: {{ chart_labels|safe }},
+            datasets: [{
+                data: {{ chart_data|safe }},
+                borderColor: '#7c3aed',
+                backgroundColor: 'rgba(124, 58, 237, 0.1)',
+                tension: 0.4,
+                fill: true,
+                pointBackgroundColor: '#7c3aed',
+                pointRadius: 4,
+                borderWidth: 2,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { beginAtZero: true, ticks: { stepSize: 1 } }
+            }
+        }
+    });
+</script>
+{% endblock %}

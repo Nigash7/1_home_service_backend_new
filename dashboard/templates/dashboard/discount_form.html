@@ -1,0 +1,176 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}{% if is_edit %}Edit{% else %}Add{% endif %} Discount{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="flex items-center gap-3 mb-6">
+        <a href="{% url 'discounts_list' %}" class="text-gray-500 hover:text-gray-700">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+        </a>
+        <h1 class="text-2xl font-bold text-gray-900">
+            {% if is_edit %}Edit Discount{% else %}Add Discount{% endif %}
+        </h1>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <form method="post" class="space-y-5">
+            {% csrf_token %}
+
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Name *</label>
+                <input type="text" name="name" required
+                       value="{% if is_edit %}{{ discount.name }}{% endif %}"
+                       placeholder="e.g. Monsoon Sale, First Booking Offer"
+                       class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+            </div>
+
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Description</label>
+                <textarea name="description" rows="2"
+                          class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">{% if is_edit %}{{ discount.description }}{% endif %}</textarea>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Type *</label>
+                    <select name="discount_type"
+                            class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                        <option value="PERCENTAGE" {% if is_edit and discount.discount_type == 'PERCENTAGE' %}selected{% endif %}>Percentage (%)</option>
+                        <option value="FLAT" {% if is_edit and discount.discount_type == 'FLAT' %}selected{% endif %}>Flat Amount (₹)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Value *</label>
+                    <input type="number" name="value" step="0.01" min="0" required
+                           value="{% if is_edit %}{{ discount.value }}{% endif %}"
+                           placeholder="20 for 20% or ₹100"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Max Discount (₹)</label>
+                    <input type="number" name="max_discount" step="0.01" min="0"
+                           value="{% if is_edit and discount.max_discount %}{{ discount.max_discount }}{% endif %}"
+                           placeholder="Optional cap"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                    <p class="text-xs text-gray-500 mt-1">For percentage only</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Min Order (₹)</label>
+                    <input type="number" name="min_order_amount" step="0.01" min="0"
+                           value="{% if is_edit %}{{ discount.min_order_amount }}{% else %}0{% endif %}"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                </div>
+            </div>
+
+            <div class="border border-gray-200 rounded-xl p-4 space-y-3">
+                <div class="text-sm font-semibold text-gray-700">Target (leave all blank = site-wide)</div>
+
+                <select name="category" id="category-select"
+                        class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm">
+                    <option value="">-- Category --</option>
+                    {% for cat in categories %}
+                        <option value="{{ cat.id }}"
+                                data-subs="{% for sub in cat.subcategories.all %}{{ sub.id }}:{{ sub.name }}|{% endfor %}"
+                                {% if is_edit and discount.category_id == cat.id %}selected{% endif %}>
+                            {{ cat.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+
+                <select name="subcategory" id="subcategory-select"
+                        class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm">
+                    <option value="">-- Subcategory --</option>
+                    {% if is_edit and discount.category %}
+                        {% for sub in discount.category.subcategories.all %}
+                            <option value="{{ sub.id }}" {% if discount.subcategory_id == sub.id %}selected{% endif %}>{{ sub.name }}</option>
+                        {% endfor %}
+                    {% endif %}
+                </select>
+
+                <select name="service"
+                        class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm">
+                    <option value="">-- Specific Service --</option>
+                    {% for svc in services %}
+                        <option value="{{ svc.id }}" {% if is_edit and discount.service_id == svc.id %}selected{% endif %}>
+                            {{ svc.category.name }} → {{ svc.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Valid From</label>
+                    <input type="datetime-local" name="valid_from"
+                           value="{% if is_edit and discount.valid_from %}{{ discount.valid_from|date:'Y-m-d\TH:i' }}{% endif %}"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Valid Until</label>
+                    <input type="datetime-local" name="valid_until"
+                           value="{% if is_edit and discount.valid_until %}{{ discount.valid_until|date:'Y-m-d\TH:i' }}{% endif %}"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                    <p class="text-xs text-gray-500 mt-1">Leave blank for no expiry</p>
+                </div>
+            </div>
+
+            <div>
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" name="is_active"
+                           {% if is_edit and discount.is_active or not is_edit %}checked{% endif %}
+                           class="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                    <div>
+                        <div class="text-sm font-semibold text-gray-700">Active</div>
+                        <div class="text-xs text-gray-500">Apply to matching bookings</div>
+                    </div>
+                </label>
+            </div>
+
+            <div class="flex gap-3 pt-4 border-t border-gray-100">
+                <a href="{% url 'discounts_list' %}"
+                   class="flex-1 text-center bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold py-2.5 rounded-lg">
+                    Cancel
+                </a>
+                <button type="submit"
+                        class="flex-1 bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2.5 rounded-lg">
+                    {% if is_edit %}Save Changes{% else %}Create Discount{% endif %}
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    const catSelect = document.getElementById('category-select');
+    const subSelect = document.getElementById('subcategory-select');
+
+    catSelect.addEventListener('change', function() {
+        const selected = this.options[this.selectedIndex];
+        const subsData = selected.getAttribute('data-subs') || '';
+        subSelect.innerHTML = '<option value="">-- Subcategory --</option>';
+        if (subsData) {
+            subsData.split('|').filter(s => s).forEach(pair => {
+                const [id, name] = pair.split(':');
+                const opt = document.createElement('option');
+                opt.value = id;
+                opt.textContent = name;
+                subSelect.appendChild(opt);
+            });
+        }
+    });
+</script>
+{% endblock %}

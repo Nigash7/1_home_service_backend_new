@@ -1,0 +1,93 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}Service Forms{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+    <div class="flex justify-between items-start mb-6">
+        <div>
+            <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">Service Forms</h1>
+            <p class="text-gray-500 mt-1">Multi-step forms customers fill before booking.</p>
+        </div>
+        <a href="{% url 'form_add' %}"
+           class="bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2 px-4 rounded-lg flex items-center gap-2 shadow-sm">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            New Form
+        </a>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="space-y-3">
+        {% for form in forms %}
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition">
+            <div class="flex items-start justify-between">
+                <div class="flex-1">
+                    <div class="flex items-center gap-3 mb-2">
+                        <h2 class="text-lg font-bold text-gray-900">{{ form.name }}</h2>
+                        {% if form.is_active %}
+                            <span class="bg-green-100 text-green-700 text-xs font-semibold px-2 py-0.5 rounded-full">Active</span>
+                        {% else %}
+                            <span class="bg-gray-100 text-gray-500 text-xs font-semibold px-2 py-0.5 rounded-full">Inactive</span>
+                        {% endif %}
+                    </div>
+                    <div class="text-sm text-gray-500 mb-2">
+                        Linked to:
+                        {% if form.service %}
+                            <span class="text-gray-700 font-medium">Service: {{ form.service.name }}</span>
+                        {% elif form.subcategory %}
+                            <span class="text-gray-700 font-medium">Subcategory: {{ form.subcategory.name }}</span>
+                        {% elif form.category %}
+                            <span class="text-gray-700 font-medium">Category: {{ form.category.name }}</span>
+                        {% else %}
+                            <span class="text-orange-600">Not linked</span>
+                        {% endif %}
+                    </div>
+                    <div class="flex items-center gap-4 text-xs text-gray-500">
+                        <span>📝 {{ form.steps.count }} steps</span>
+                        <a href="{% url 'form_submissions' form.id %}" class="text-primary-600 hover:underline">
+                            {{ form.submissions.count }} submissions →
+                        </a>
+                    </div>
+                </div>
+
+                <div class="flex gap-2 ml-4">
+                    <a href="{% url 'form_detail' form.id %}"
+                       class="text-xs font-semibold bg-primary-100 hover:bg-primary-200 text-primary-700 py-2 px-3 rounded-lg">
+                        Manage Steps
+                    </a>
+                    <a href="{% url 'form_edit' form.id %}"
+                       class="text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 px-3 rounded-lg">
+                        Edit
+                    </a>
+                    <form method="post" action="{% url 'form_delete' form.id %}"
+                          onsubmit="return confirm('Delete this form?')" class="inline">
+                        {% csrf_token %}
+                        <button type="submit"
+                                class="text-xs font-semibold bg-red-50 hover:bg-red-100 text-red-600 py-2 px-3 rounded-lg">
+                            Delete
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="bg-white rounded-2xl border border-gray-100 p-12 text-center">
+            <p class="text-gray-500 mb-4">No forms yet.</p>
+            <a href="{% url 'form_add' %}"
+               class="inline-block bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2 px-6 rounded-lg">
+                Create First Form
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

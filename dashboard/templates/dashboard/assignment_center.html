@@ -1,0 +1,388 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}Assignment Center{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <div class="mb-6">
+        <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">Assignment Center</h1>
+        <p class="text-gray-500 mt-1">Assign vendors and track today's activity.</p>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <!-- Stat cards -->
+    <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+        <!-- Total Bookings -->
+        <div class="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-blue-400 border border-gray-100">
+            <div class="flex items-start justify-between">
+                <div class="text-xs font-semibold text-blue-500 uppercase tracking-wide">Total Bookings</div>
+                <div class="w-9 h-9 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                </div>
+            </div>
+            <div class="text-3xl font-bold text-gray-900 mt-2">{{ total_bookings }}</div>
+            <div class="text-xs mt-1 {% if total_bookings_trend >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                {% if total_bookings_trend >= 0 %}↑{% else %}↓{% endif %} {{ total_bookings_trend }}% overall
+            </div>
+        </div>
+
+        <!-- Pending Assignment -->
+        <div class="bg-orange-50 rounded-2xl p-5 shadow-sm border-l-4 border-orange-400 border border-orange-100">
+            <div class="flex items-start justify-between">
+                <div class="text-xs font-semibold text-orange-500 uppercase tracking-wide">Pending Assignment</div>
+                <div class="w-9 h-9 bg-orange-100 text-orange-600 rounded-lg flex items-center justify-center">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                </div>
+            </div>
+            <div class="text-3xl font-bold text-gray-900 mt-2">{{ pending_bookings }}</div>
+            <div class="text-xs mt-1 text-orange-600">Need vendor assignment</div>
+        </div>
+
+        <!-- Assigned Today -->
+        <div class="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-green-400 border border-gray-100">
+            <div class="flex items-start justify-between">
+                <div class="text-xs font-semibold text-green-500 uppercase tracking-wide">Assigned Today</div>
+                <div class="w-9 h-9 bg-green-100 text-green-600 rounded-lg flex items-center justify-center">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                </div>
+            </div>
+            <div class="text-3xl font-bold text-gray-900 mt-2">{{ assigned_today }}</div>
+            <div class="text-xs mt-1 {% if assigned_trend >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                {% if assigned_trend >= 0 %}↑{% else %}↓{% endif %} {{ assigned_trend }}% from yesterday
+            </div>
+        </div>
+
+        <!-- Completed Today -->
+        <div class="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-purple-400 border border-gray-100">
+            <div class="flex items-start justify-between">
+                <div class="text-xs font-semibold text-purple-500 uppercase tracking-wide">Completed Today</div>
+                <div class="w-9 h-9 bg-purple-100 text-purple-600 rounded-lg flex items-center justify-center">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7l-2 2-1-1"/></svg>
+                </div>
+            </div>
+            <div class="text-3xl font-bold text-gray-900 mt-2">{{ completed_today }}</div>
+            <div class="text-xs mt-1 {% if completed_trend >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                {% if completed_trend >= 0 %}↑{% else %}↓{% endif %} {{ completed_trend }}% from yesterday
+            </div>
+        </div>
+
+        <!-- Total Vendors -->
+        <div class="bg-white rounded-2xl p-5 shadow-sm border-l-4 border-teal-400 border border-gray-100">
+            <div class="flex items-start justify-between">
+                <div class="text-xs font-semibold text-teal-500 uppercase tracking-wide">Total Vendors</div>
+                <div class="w-9 h-9 bg-teal-100 text-teal-600 rounded-lg flex items-center justify-center">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                </div>
+            </div>
+            <div class="text-3xl font-bold text-gray-900 mt-2">{{ total_vendors }}</div>
+            <div class="text-xs mt-1 text-gray-500">Registered vendors</div>
+        </div>
+    </div>
+
+    <!-- Pending bookings to assign -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-6">
+        <div class="p-5 border-b border-gray-100 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <h2 class="text-base font-semibold text-gray-900">Pending Bookings to Assign</h2>
+                {% if pending_bookings > 0 %}
+                <span class="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{{ pending_bookings }}</span>
+                {% endif %}
+            </div>
+            <div class="flex items-center gap-3">
+                {% if pending_bookings > 0 %}
+                <form method="post" action="{% url 'bulk_auto_assign' %}"
+                      onsubmit="return confirm('Auto-assign all pending bookings via round-robin?')">
+                    {% csrf_token %}
+                    <button type="submit" class="text-sm bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-1.5 rounded-lg">
+                        🔄 Auto-Assign All
+                    </button>
+                </form>
+                {% endif %}
+                <a href="{% url 'bookings_list' %}?status=PENDING" class="text-sm text-primary-600 hover:underline font-medium">View All</a>
+            </div>
+        </div>
+        <div class="divide-y divide-gray-100">
+            {% for booking in pending_list %}
+            <div class="flex items-center gap-4 p-4 hover:bg-gray-50">
+                <div class="w-10 h-10 bg-primary-100 text-primary-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/></svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2">
+                        <span class="text-sm font-bold text-gray-900">#{{ booking.id }}</span>
+                        <span class="text-xs text-gray-500">{{ booking.category.name }}</span>
+                    </div>
+                    <div class="text-sm text-gray-700">{{ booking.customer.user.get_full_name|default:booking.customer.user.username }}</div>
+                    <div class="text-xs text-gray-400 truncate">{{ booking.address_district|default:booking.address_text }}</div>
+                </div>
+                <div class="text-right hidden sm:block">
+                    <div class="text-xs text-gray-500">{{ booking.preferred_date|date:"M d" }}, {{ booking.preferred_time|time:"g:i A" }}</div>
+                    <div class="text-sm font-bold text-gray-900">₹{{ booking.amount|floatformat:0 }}</div>
+                </div>
+                <div class="flex gap-2 flex-shrink-0">
+                    <form method="post" action="{% url 'auto_assign' booking.id %}"
+                          onsubmit="return confirm('Auto-assign this booking?')">
+                        {% csrf_token %}
+                        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg" title="Round-robin auto-assign">
+                            🔄 Auto
+                        </button>
+                    </form>
+                    <a href="{% url 'booking_detail' booking.id %}"
+                       class="bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">
+                        Assign
+                    </a>
+                </div>
+            </div>
+            {% empty %}
+            <div class="p-8 text-center text-gray-500 text-sm">No pending bookings. All caught up! 🎉</div>
+            {% endfor %}
+        </div>
+    </div>
+    <!-- Nearby Vendors Map -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-6">
+        <div class="p-5 border-b border-gray-100 flex items-center justify-between">
+            <h2 class="text-base font-semibold text-gray-900">Vendors Map</h2>
+            <div class="flex items-center gap-4 text-xs">
+                <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-green-500"></span> Available ({{ available_count }})</span>
+                <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-orange-500"></span> Busy ({{ busy_count }})</span>
+                <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-gray-400"></span> Offline ({{ offline_count }})</span>
+            </div>
+        </div>
+        <div id="vendors-map" class="w-full" style="height: 400px;"></div>
+    </div>
+
+  <!-- Availability donut -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+            <h2 class="text-base font-semibold text-gray-900 mb-4">Vendor Availability</h2>
+            <div class="relative h-48 flex items-center justify-center">
+                <canvas id="availabilityChart"></canvas>
+                <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <div class="text-2xl font-bold text-gray-900">{{ donut_total }}</div>
+                    <div class="text-xs text-gray-500">Total Vendors</div>
+                </div>
+            </div>
+            <div class="space-y-2 mt-4">
+                <div class="flex items-center justify-between text-sm">
+                    <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-green-500"></span> Available</span>
+                    <span class="font-semibold">{{ donut_available }}
+                        {% if donut_total %}<span class="text-gray-400 text-xs">({% widthratio donut_available donut_total 100 %}%)</span>{% endif %}
+                    </span>
+                </div>
+                <div class="flex items-center justify-between text-sm">
+                    <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-orange-500"></span> Busy</span>
+                    <span class="font-semibold">{{ donut_busy }}
+                        {% if donut_total %}<span class="text-gray-400 text-xs">({% widthratio donut_busy donut_total 100 %}%)</span>{% endif %}
+                    </span>
+                </div>
+                <div class="flex items-center justify-between text-sm">
+                    <span class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-gray-400"></span> Offline</span>
+                    <span class="font-semibold">{{ donut_offline }}
+                        {% if donut_total %}<span class="text-gray-400 text-xs">({% widthratio donut_offline donut_total 100 %}%)</span>{% endif %}
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Top Performing Vendors (moved here) -->
+        <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+            <h2 class="text-base font-semibold text-gray-900 mb-4">Top Performing Vendors</h2>
+            <div class="space-y-3">
+                {% for v in top_vendors %}
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0
+                        {% if forloop.counter == 1 %}bg-yellow-100 text-yellow-700
+                        {% elif forloop.counter == 2 %}bg-gray-100 text-gray-600
+                        {% elif forloop.counter == 3 %}bg-orange-100 text-orange-700
+                        {% else %}bg-gray-50 text-gray-500{% endif %}">
+                        {% if forloop.counter == 1 %}🏆{% else %}{{ forloop.counter }}{% endif %}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <a href="{% url 'vendor_detail' v.id %}" class="text-sm font-medium text-gray-900 hover:text-primary-600 truncate block">
+                            {{ v.user.get_full_name|default:v.user.username }}
+                        </a>
+                        <div class="text-xs text-gray-500">{{ v.completed_jobs }} jobs</div>
+                    </div>
+                    {% if v.avg_rating %}
+                    <div class="text-sm font-semibold text-yellow-600 flex-shrink-0">⭐ {{ v.avg_rating|floatformat:1 }}</div>
+                    {% endif %}
+                </div>
+                {% empty %}
+                <p class="text-sm text-gray-500">No completed jobs yet.</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Assignments (full width now) -->
+    <div class="grid grid-cols-1 gap-6">
+      <!-- Recent Assignments -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="p-5 border-b border-gray-100">
+                <h2 class="text-base font-semibold text-gray-900">Recent Assignments</h2>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead>
+                        <tr class="bg-gray-50 text-left">
+                            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">ID</th>
+                            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Service</th>
+                            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Vendor</th>
+                            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">By</th>
+                            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        {% for b in recent_assignments %}
+                        <tr class="hover:bg-gray-50 cursor-pointer" onclick="window.location='{% url 'booking_detail' b.id %}'">
+                            <td class="px-4 py-3 text-sm font-medium text-gray-900">#{{ b.id }}</td>
+                            <td class="px-4 py-3 text-sm text-gray-700">{{ b.category.name }}</td>
+                            <td class="px-4 py-3 text-sm text-gray-700">{{ b.vendor.user.get_full_name|default:b.vendor.user.username }}</td>
+                            <td class="px-4 py-3">
+                                <span class="text-xs px-2 py-0.5 rounded-full {% if b.assigned_by == 'Auto' %}bg-blue-100 text-blue-700{% else %}bg-gray-100 text-gray-700{% endif %}">
+                                    {{ b.assigned_by|default:"Manual" }}
+                                </span>
+                            </td>
+                            <td class="px-4 py-3">
+                                <span class="text-xs font-semibold px-2 py-1 rounded-full
+                                    {% if b.status == 'ASSIGNED' %}bg-blue-100 text-blue-700
+                                    {% elif b.status == 'IN_PROGRESS' %}bg-purple-100 text-purple-700
+                                    {% elif b.status == 'COMPLETED' %}bg-green-100 text-green-700
+                                    {% else %}bg-red-100 text-red-700{% endif %}">
+                                    {{ b.get_status_display }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="5" class="px-4 py-8 text-center text-gray-500 text-sm">No assignments yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Top Performing Vendors -->
+        <!-- <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+            <h2 class="text-base font-semibold text-gray-900 mb-4">Top Performing Vendors</h2>
+            <div class="space-y-3">
+                {% for v in top_vendors %}
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0
+                        {% if forloop.counter == 1 %}bg-yellow-100 text-yellow-700
+                        {% elif forloop.counter == 2 %}bg-gray-100 text-gray-600
+                        {% elif forloop.counter == 3 %}bg-orange-100 text-orange-700
+                        {% else %}bg-gray-50 text-gray-500{% endif %}">
+                        {% if forloop.counter == 1 %}🏆{% else %}{{ forloop.counter }}{% endif %}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <a href="{% url 'vendor_detail' v.id %}" class="text-sm font-medium text-gray-900 hover:text-primary-600 truncate block">
+                            {{ v.user.get_full_name|default:v.user.username }}
+                        </a>
+                        <div class="text-xs text-gray-500">{{ v.completed_jobs }} jobs</div>
+                    </div>
+                    {% if v.avg_rating %}
+                    <div class="text-sm font-semibold text-yellow-600 flex-shrink-0">⭐ {{ v.avg_rating|floatformat:1 }}</div>
+                    {% endif %}
+                </div>
+                {% empty %}
+                <p class="text-sm text-gray-500">No completed jobs yet.</p>
+                {% endfor %}
+            </div>
+        </div> -->
+    </div>
+</div>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const vendors = {{ vendor_pins_json|safe }};
+        const bookings = {{ booking_pins_json|safe }};
+
+        // Center: first vendor, first booking, or Chennai default
+        let center = [13.0827, 80.2707];
+        if (vendors.length > 0) center = [vendors[0].lat, vendors[0].lng];
+        else if (bookings.length > 0) center = [bookings[0].lat, bookings[0].lng];
+
+        const map = L.map('vendors-map').setView(center, 12);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '© OpenStreetMap © CARTO',
+            subdomains: 'abcd',
+            maxZoom: 20,
+        }).addTo(map);
+
+        const colors = { available: '#22c55e', busy: '#f97316', offline: '#9ca3af' };
+
+        // Vendor pins
+        vendors.forEach(v => {
+            const circle = L.circleMarker([v.lat, v.lng], {
+                radius: 9,
+                fillColor: colors[v.status],
+                color: '#fff',
+                weight: 2,
+                fillOpacity: 0.9,
+            }).addTo(map);
+            circle.bindPopup(
+                `<strong>${v.name}</strong><br>` +
+                `Status: ${v.status}<br>` +
+                `Active jobs: ${v.jobs}<br>` +
+                `<a href="/vendors/${v.id}/">View vendor →</a>`
+            );
+        });
+
+        // Booking pins (pending) — shown as blue markers
+        bookings.forEach(b => {
+            const m = L.marker([b.lat, b.lng]).addTo(map);
+            m.bindPopup(
+                `<strong>Booking #${b.id}</strong><br>` +
+                `${b.category}<br>` +
+                `<a href="/bookings/${b.id}/">Assign vendor →</a>`
+            );
+        });
+
+        // Fit bounds to all points
+        const allPoints = [
+            ...vendors.map(v => [v.lat, v.lng]),
+            ...bookings.map(b => [b.lat, b.lng]),
+        ];
+        if (allPoints.length > 0) {
+            map.fitBounds(allPoints, { padding: [40, 40], maxZoom: 13 });
+        }
+
+        // Force map to recalculate size after render
+        setTimeout(() => map.invalidateSize(), 300);
+    });
+</script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const ctx = document.getElementById('availabilityChart');
+        if (ctx) {
+            new Chart(ctx.getContext('2d'), {
+                type: 'doughnut',
+                data: {
+                    labels: ['Available', 'Busy', 'Offline'],
+                    datasets: [{
+                        data: [{{ donut_available }}, {{ donut_busy }}, {{ donut_offline }}],
+                        backgroundColor: ['#22c55e', '#f97316', '#9ca3af'],
+                        borderWidth: 0,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '72%',
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+    });
+</script>
+</script>
+{% endblock %}

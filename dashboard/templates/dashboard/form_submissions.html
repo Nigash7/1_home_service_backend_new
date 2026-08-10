@@ -1,0 +1,67 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}{{ form.name }} — Submissions{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+    <div class="flex items-center gap-3 mb-6">
+        <a href="{% url 'form_detail' form.id %}" class="text-gray-500 hover:text-gray-700">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+        </a>
+        <div>
+            <div class="text-xs text-gray-500 mb-1">
+                <a href="{% url 'forms_list' %}" class="hover:text-primary-600">Forms</a>
+                <span class="mx-1">/</span>
+                <a href="{% url 'form_detail' form.id %}" class="hover:text-primary-600">{{ form.name }}</a>
+            </div>
+            <h1 class="text-2xl font-bold text-gray-900">Submissions</h1>
+        </div>
+    </div>
+
+    <div class="space-y-3">
+        {% for sub in page_obj %}
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+            <div class="flex justify-between items-start mb-3">
+                <div>
+                    <div class="font-semibold text-gray-900">
+                        {{ sub.customer.user.get_full_name|default:sub.customer.user.username }}
+                    </div>
+                    <div class="text-xs text-gray-500">
+                        {{ sub.submitted_at|date:"M d, Y H:i" }}
+                        {% if sub.booking %}
+                        · <a href="{% url 'booking_detail' sub.booking.id %}" class="text-primary-600 hover:underline">Booking #{{ sub.booking.id }}</a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="space-y-2 border-t border-gray-100 pt-3">
+                {% for resp in sub.responses %}
+                <div class="text-sm">
+                    <span class="text-gray-500">{{ resp.title }}:</span>
+                    <span class="text-gray-900 font-medium">{{ resp.answer|default:"—" }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% empty %}
+        <div class="bg-white rounded-2xl border border-gray-100 p-12 text-center text-gray-500">
+            No submissions yet.
+        </div>
+        {% endfor %}
+    </div>
+
+    {% if page_obj.has_other_pages %}
+    <div class="mt-6 flex justify-center gap-2 text-sm">
+        {% if page_obj.has_previous %}
+            <a href="?page={{ page_obj.previous_page_number }}" class="px-3 py-1 border border-gray-300 rounded-lg">Previous</a>
+        {% endif %}
+        <span class="px-3 py-1">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}
+            <a href="?page={{ page_obj.next_page_number }}" class="px-3 py-1 border border-gray-300 rounded-lg">Next</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
