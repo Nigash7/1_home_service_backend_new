@@ -151,6 +151,18 @@ PROFILE_INCOMPLETE = _e(
     route="/profile",
     push=False,
 )
+SUPPORT_REPLY = _e(
+    "support.reply", CUSTOMER, CAT_SYSTEM,
+    "Support replied to your ticket",
+    "{subject}: {preview}",
+    route="/support/{ticket_id}",
+)
+SUPPORT_STATUS = _e(
+    "support.status_changed", CUSTOMER, CAT_SYSTEM,
+    "Support ticket {status}",
+    "Your ticket \"{subject}\" is now {status}.",
+    route="/support/{ticket_id}",
+)
 
 # ================================================================= VENDOR app
 JOB_ASSIGNED = _e(
@@ -217,6 +229,18 @@ VENDOR_BROADCAST = _e(
     "vendor.broadcast", VENDOR, CAT_SYSTEM,
     "{title}", "{body}",
 )
+VENDOR_SUPPORT_REPLY = _e(
+    "vendor.support_reply", VENDOR, CAT_SYSTEM,
+    "Support replied to your ticket",
+    "{subject}: {preview}",
+    route="/support/{ticket_id}",
+)
+VENDOR_SUPPORT_STATUS = _e(
+    "vendor.support_status_changed", VENDOR, CAT_SYSTEM,
+    "Support ticket {status}",
+    "Your ticket \"{subject}\" is now {status}.",
+    route="/support/{ticket_id}",
+)
 
 # ============================================================ ADMIN dashboard
 ADMIN_BOOKING_CREATED = _e(
@@ -266,6 +290,18 @@ ADMIN_LOW_RATING = _e(
     "Low rating alert",
     "{customer_name} left {rating} stars for {vendor_name} on {service_name}.",
     route="/reviews/",
+)
+ADMIN_SUPPORT_TICKET = _e(
+    "admin.support_ticket", ADMIN, CAT_SYSTEM,
+    "New support ticket",
+    "{requester_name} ({requester_type}) raised \"{subject}\" — {category}.",
+    route="/support/{ticket_id}/",
+)
+ADMIN_SUPPORT_REPLY = _e(
+    "admin.support_reply", ADMIN, CAT_SYSTEM,
+    "New reply on ticket #{ticket_id}",
+    "{requester_name} ({requester_type}) replied: {preview}",
+    route="/support/{ticket_id}/",
 )
 ADMIN_SYSTEM = _e(
     "admin.system", ADMIN, CAT_SYSTEM,

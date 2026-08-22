@@ -1,0 +1,108 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}Header Carousel{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <div class="flex justify-between items-start mb-6">
+        <div>
+            <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">Header Carousel</h1>
+            <p class="text-gray-500 mt-1">Slides shown in the hero header at the top of the app's home screen.</p>
+        </div>
+        <a href="{% url 'header_banner_add' %}"
+           class="bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2 px-4 rounded-lg flex items-center gap-2 shadow-sm">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            Add Slide
+        </a>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {% for banner in banners %}
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition">
+            <!-- Preview matching the app's hero slide -->
+            <div class="relative overflow-hidden bg-gray-200" style="aspect-ratio: 2 / 1;">
+                {% if banner.image %}
+                    <img src="{{ banner.image.url }}" alt="" class="w-full h-full object-cover">
+                {% endif %}
+                {% if banner.title or banner.subtitle %}
+                    <div class="absolute inset-0 bg-gradient-to-r from-black/60 to-transparent"></div>
+                    <div class="absolute inset-0 p-4 flex flex-col justify-center">
+                        {% if banner.title %}
+                            <div class="text-white font-bold text-lg leading-tight">{{ banner.title }}</div>
+                        {% endif %}
+                        {% if banner.subtitle %}
+                            <div class="text-white/85 text-xs mt-1">{{ banner.subtitle }}</div>
+                        {% endif %}
+                    </div>
+                {% endif %}
+
+                {% if banner.is_active %}
+                    <span class="absolute top-2 right-2 bg-green-500 text-white text-xs font-semibold px-2 py-0.5 rounded-full shadow">Active</span>
+                {% else %}
+                    <span class="absolute top-2 right-2 bg-gray-500 text-white text-xs font-semibold px-2 py-0.5 rounded-full shadow">Inactive</span>
+                {% endif %}
+
+                <span class="absolute top-2 left-2 bg-white/90 text-gray-700 text-xs font-semibold px-2 py-0.5 rounded-full shadow-sm">
+                    #{{ banner.sort_order }}
+                </span>
+            </div>
+
+            <div class="p-4">
+                <div class="text-xs text-gray-500 mb-3">
+                    Opens:
+                    {% if banner.subcategory %}
+                        <span class="text-gray-700 font-medium">{{ banner.category.name }} &rarr; {{ banner.subcategory.name }}</span>
+                    {% elif banner.category %}
+                        <span class="text-gray-700 font-medium">{{ banner.category.name }}</span>
+                    {% else %}
+                        <span class="text-orange-600">Not linked (tap does nothing)</span>
+                    {% endif %}
+                </div>
+
+                <div class="flex gap-2">
+                    <form method="post" action="{% url 'header_banner_toggle' banner.id %}" class="flex-1">
+                        {% csrf_token %}
+                        <button type="submit"
+                                class="w-full text-xs font-semibold {% if banner.is_active %}bg-orange-50 hover:bg-orange-100 text-orange-700{% else %}bg-green-50 hover:bg-green-100 text-green-700{% endif %} py-2 rounded-lg">
+                            {% if banner.is_active %}Deactivate{% else %}Activate{% endif %}
+                        </button>
+                    </form>
+                    <a href="{% url 'header_banner_edit' banner.id %}"
+                       class="flex-1 text-center text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-lg">
+                        Edit
+                    </a>
+                    <form method="post" action="{% url 'header_banner_delete' banner.id %}"
+                          onsubmit="return confirm('Delete this slide?')" class="flex-1">
+                        {% csrf_token %}
+                        <button type="submit"
+                                class="w-full text-xs font-semibold bg-red-50 hover:bg-red-100 text-red-600 py-2 rounded-lg">
+                            Delete
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-span-full">
+            <div class="bg-white rounded-2xl border border-gray-100 p-12 text-center">
+                <p class="text-gray-500 mb-4">No carousel slides yet. The app hides the carousel until you add one.</p>
+                <a href="{% url 'header_banner_add' %}"
+                   class="inline-block bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2 px-6 rounded-lg">
+                    Add First Slide
+                </a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

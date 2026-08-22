@@ -17,6 +17,7 @@ created in-app — you can build and test the entire feature without Firebase.
 import json
 import logging
 import threading
+from pathlib import Path
 
 from django.conf import settings
 from django.utils import timezone
@@ -71,6 +72,41 @@ def _active_tokens(notification):
     )
 
 
+def _preflight_error():
+    """
+    Why push can't work right now, as a sentence worth reading — or None.
+
+    Checked before any send so the reason lands in `push_error` instead of
+    surfacing as a mid-flight traceback (missing package) or an opaque
+    "transport: [Errno 2]" (missing service-account file).
+    """
+    try:
+        import requests  # noqa: F401
+    except ImportError:
+        return (
+            "the 'requests' package is not installed - run "
+            "`pip install -r requirements.txt` in the virtualenv you start "
+            "the server with"
+        )
+    try:
+        import google.auth  # noqa: F401
+    except ImportError:
+        return (
+            "the 'google-auth' package is not installed - run "
+            "`pip install -r requirements.txt` in the virtualenv you start "
+            "the server with"
+        )
+
+    credentials_file = Path(str(getattr(settings, "FCM_CREDENTIALS_FILE", "")))
+    if not credentials_file.is_file():
+        return (
+            f"the FCM service-account file is missing at {credentials_file} - "
+            "download it from Firebase console > Project settings > Service "
+            "accounts, or set FCM_ENABLED = False to run without push"
+        )
+    return None
+
+
 def _send_one(token_obj, title, body, data, image_url=""):
     """Returns (ok: bool, error: str)."""
     import requests
@@ -123,6 +159,12 @@ def _send_one(token_obj, title, body, data, image_url=""):
 
 
 def _deliver(notification_id):
+    """
+    Runs on a background thread, so it must never raise: an escaping exception
+    prints a bare traceback nobody owns and leaves the notification stuck on
+    PENDING with no recorded reason. Anything that goes wrong is written to
+    push_error instead, where it can actually be found later.
+    """
     from .models import Notification, PushStatus
 
     try:
@@ -130,39 +172,61 @@ def _deliver(notification_id):
     except Notification.DoesNotExist:
         return
 
-    tokens = list(_active_tokens(note))
-    if not tokens:
-        note.push_status = PushStatus.SKIPPED
-        note.push_error = "No active device tokens"
+    def fail(status, reason):
+        note.push_status = status
+        note.push_error = reason[:1000]
         note.save(update_fields=["push_status", "push_error"])
-        return
 
-    data = dict(note.data or {})
-    data.update(
-        {
-            "notification_id": note.pk,
-            "event": note.event,
-            "route": note.route or "",
-            "booking_id": note.booking_id or "",
-            "click_action": "FLUTTER_NOTIFICATION_CLICK",
-        }
-    )
+    try:
+        problem = _preflight_error()
+        if problem:
+            logger.error("push is not deliverable: %s", problem)
+            fail(PushStatus.FAILED, problem)
+            return
 
-    errors, sent = [], 0
-    for token_obj in tokens:
-        ok, err = _send_one(token_obj, note.title, note.body, data, note.image_url)
-        if ok:
-            sent += 1
+        tokens = list(_active_tokens(note))
+        if not tokens:
+            fail(PushStatus.SKIPPED, "No active device tokens")
+            return
+
+        data = dict(note.data or {})
+        data.update(
+            {
+                "notification_id": note.pk,
+                "event": note.event,
+                "route": note.route or "",
+                "booking_id": note.booking_id or "",
+                "click_action": "FLUTTER_NOTIFICATION_CLICK",
+            }
+        )
+
+        errors, sent = [], 0
+        for token_obj in tokens:
+            try:
+                ok, err = _send_one(
+                    token_obj, note.title, note.body, data, note.image_url
+                )
+            except Exception as exc:  # one bad token must not skip the rest
+                ok, err = False, f"{type(exc).__name__}: {exc}"
+            if ok:
+                sent += 1
+            else:
+                errors.append(err)
+
+        if sent:
+            note.push_status = PushStatus.SENT
+            note.push_sent_at = timezone.now()
         else:
-            errors.append(err)
+            note.push_status = PushStatus.FAILED
+        note.push_error = " | ".join(errors)[:1000]
+        note.save(update_fields=["push_status", "push_sent_at", "push_error"])
 
-    if sent:
-        note.push_status = PushStatus.SENT
-        note.push_sent_at = timezone.now()
-    else:
-        note.push_status = PushStatus.FAILED
-    note.push_error = " | ".join(errors)[:1000]
-    note.save(update_fields=["push_status", "push_sent_at", "push_error"])
+    except Exception as exc:
+        logger.exception("push delivery failed for notification %s", notification_id)
+        try:
+            fail(PushStatus.FAILED, f"{type(exc).__name__}: {exc}")
+        except Exception:
+            pass
 
 
 def dispatch(notification):

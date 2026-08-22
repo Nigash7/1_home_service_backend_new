@@ -50,7 +50,17 @@ class BookingCreateSerializer(serializers.ModelSerializer):
         final_amount = max(subtotal - discount, 0)
         validated_data['amount'] = final_amount
 
-        return Booking.objects.create(customer=customer, **validated_data)
+        booking = Booking.objects.create(customer=customer, **validated_data)
+
+        # The form is submitted before the booking exists, so its own `booking`
+        # FK comes back null. Close the loop here — the admin page and the
+        # vendor's job both read the answers through that side of the link.
+        submission = booking.form_submission
+        if submission is not None and submission.booking_id != booking.id:
+            submission.booking = booking
+            submission.save(update_fields=['booking'])
+
+        return booking
 
 class BookingListSerializer(serializers.ModelSerializer):
     """
@@ -63,6 +73,9 @@ class BookingListSerializer(serializers.ModelSerializer):
     customer_address = serializers.CharField(source='customer.address', read_only=True)
     customer_phone = serializers.SerializerMethodField()
     vendor_name = serializers.SerializerMethodField()
+    form_name = serializers.SerializerMethodField()
+    form_groups = serializers.SerializerMethodField()
+    form_responses = serializers.SerializerMethodField()
 
     class Meta:
         model = Booking
@@ -70,9 +83,10 @@ class BookingListSerializer(serializers.ModelSerializer):
             'id', 'category', 'category_name', 'subcategory', 'subcategory_name',
             'customer_name', 'customer_address', 'customer_phone',
             'vendor', 'vendor_name', 'preferred_date', 'preferred_time', 'status',
-            'amount', 'payment_status', 'notes',
+            'amount', 'payment_status', 'notes', 'services_json',
            'address_text', 'address_state', 'address_district', 'address_pincode',
             'location_lat', 'location_lng',
+            'form_name', 'form_groups', 'form_responses',
             'created_at', 'assigned_at', 'completed_at',
         ]
 
@@ -93,6 +107,27 @@ class BookingListSerializer(serializers.ModelSerializer):
             u = obj.vendor.user
             return u.get_full_name() or u.username
         return None
+
+    def get_form_name(self, obj):
+        """Heading for the answers — the service or form they belong to."""
+        groups = obj.form_answer_groups
+        return groups[0]['title'] if groups else None
+
+    def get_form_groups(self, obj):
+        """
+        The customer's answers so the vendor knows what the job involves
+        before arriving, grouped by service so a multi-service booking stays
+        readable. Always a list — empty when no form was filled.
+        """
+        return obj.form_answer_groups
+
+    def get_form_responses(self, obj):
+        """Flattened view of the same answers, for callers that want one list."""
+        return [
+            response
+            for group in obj.form_answer_groups
+            for response in group['responses']
+        ]
 
 
 class JobStartPhotoSerializer(serializers.ModelSerializer):

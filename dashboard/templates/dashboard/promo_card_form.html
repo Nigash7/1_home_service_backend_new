@@ -1,0 +1,217 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}{% if is_edit %}Edit{% else %}Add{% endif %} Promo Card{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="flex items-center gap-3 mb-6">
+        <a href="{% url 'promo_cards_list' %}" class="text-gray-500 hover:text-gray-700">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+        </a>
+        <h1 class="text-2xl font-bold text-gray-900">
+            {% if is_edit %}Edit Promo Card{% else %}Add Promo Card{% endif %}
+        </h1>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <form method="post" enctype="multipart/form-data" class="space-y-5">
+            {% csrf_token %}
+
+            <!-- Image -->
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Card Image *</label>
+                {% if is_edit and card.image %}
+                    <div class="mb-3">
+                        <img src="{{ card.image.url }}" alt="Current" class="w-56 rounded-xl object-cover border border-gray-200" style="aspect-ratio: 1 / 1;">
+                        <p class="text-xs text-gray-500 mt-1">Current image. Upload a new one to replace.</p>
+                    </div>
+                {% endif %}
+                <input type="file" name="image" accept="image/*" {% if not is_edit %}required{% endif %}
+                       class="w-full text-sm border border-gray-300 rounded-lg p-2 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary-100 file:text-primary-700 hover:file:bg-primary-200">
+                <p class="text-xs text-gray-500 mt-1">Recommended: square, around 1000&times;1000. Text sits over the top-left and the button over the bottom-left.</p>
+            </div>
+
+            <!-- Badge -->
+            <div class="grid grid-cols-3 gap-3">
+                <div class="col-span-2">
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Badge Text</label>
+                    <input type="text" name="badge_text"
+                           value="{% if is_edit %}{{ card.badge_text }}{% endif %}"
+                           placeholder="e.g. New Launch"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                    <p class="text-xs text-gray-500 mt-1">Leave blank to hide the chip</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Badge Colour</label>
+                    <input type="color" name="badge_color"
+                           value="{% if is_edit %}{{ card.badge_color }}{% else %}#9C1458{% endif %}"
+                           class="w-full h-11 border border-gray-300 rounded-lg p-1 cursor-pointer">
+                </div>
+            </div>
+
+            <!-- Title -->
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Title *</label>
+                <input type="text" name="title" required
+                       value="{% if is_edit %}{{ card.title }}{% endif %}"
+                       placeholder="e.g. Korean Facials at home"
+                       class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+            </div>
+
+            <!-- Subtitle -->
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Subtitle</label>
+                <input type="text" name="subtitle"
+                       value="{% if is_edit %}{{ card.subtitle }}{% endif %}"
+                       placeholder="e.g. From &#8377;1,899"
+                       class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+            </div>
+
+            <!-- Button text -->
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Button Text</label>
+                <input type="text" name="button_text"
+                       value="{% if is_edit %}{{ card.button_text }}{% else %}Book now{% endif %}"
+                       placeholder="Book now"
+                       class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+            </div>
+
+            <!-- Placement -->
+            <div class="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Where On The Home Page *</label>
+                    <select name="placement" id="placement-select"
+                            class="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                        {% for value, label in placement_choices %}
+                            <option value="{{ value }}"
+                                    {% if is_edit and card.placement == value %}selected{% elif not is_edit and value == 'AFTER_SECTIONS' %}selected{% endif %}>
+                                {{ label }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div id="after-section-wrap">
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Which Section?</label>
+                    <select name="after_section" id="after-section-select"
+                            class="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                        <option value="">-- Select Home Section --</option>
+                        {% for section in home_sections %}
+                            <option value="{{ section.id }}" {% if is_edit and card.after_section_id == section.id %}selected{% endif %}>{{ section.title }}</option>
+                        {% endfor %}
+                    </select>
+                    <p class="text-xs text-gray-500 mt-1">The card appears directly below this section.</p>
+                </div>
+            </div>
+
+            <!-- Link to category/subcategory -->
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Tapping The Card Opens</label>
+                <select name="category" id="category-select"
+                        class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none mb-2">
+                    <option value="">-- Select Category --</option>
+                    {% for cat in categories %}
+                        <option value="{{ cat.id }}"
+                                data-subs="{% for sub in cat.subcategories.all %}{{ sub.id }}:{{ sub.name }}|{% endfor %}"
+                                {% if is_edit and card.category_id == cat.id %}selected{% endif %}>
+                            {{ cat.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+
+                <select name="subcategory" id="subcategory-select"
+                        class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                    <option value="">-- Optional: Select Subcategory --</option>
+                    {% if is_edit and card.category %}
+                        {% for sub in card.category.subcategories.all %}
+                            <option value="{{ sub.id }}" {% if card.subcategory_id == sub.id %}selected{% endif %}>{{ sub.name }}</option>
+                        {% endfor %}
+                    {% endif %}
+                </select>
+                <p class="text-xs text-gray-500 mt-1">Leave empty to make the card non-tappable.</p>
+            </div>
+
+            <!-- Sort order -->
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Sort Order</label>
+                <input type="number" name="sort_order" min="0"
+                       value="{% if is_edit %}{{ card.sort_order }}{% else %}0{% endif %}"
+                       class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                <p class="text-xs text-gray-500 mt-1">Only matters when several cards share the same position &mdash; lower shows first</p>
+            </div>
+
+            <!-- Active toggle -->
+            <div>
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" name="is_active"
+                           {% if is_edit and card.is_active or not is_edit %}checked{% endif %}
+                           class="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                    <div>
+                        <div class="text-sm font-semibold text-gray-700">Active</div>
+                        <div class="text-xs text-gray-500">Show this card on the home page</div>
+                    </div>
+                </label>
+            </div>
+
+            <!-- Buttons -->
+            <div class="flex gap-3 pt-4 border-t border-gray-100">
+                <a href="{% url 'promo_cards_list' %}"
+                   class="flex-1 text-center bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold py-2.5 rounded-lg">
+                    Cancel
+                </a>
+                <button type="submit"
+                        class="flex-1 bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2.5 rounded-lg">
+                    {% if is_edit %}Save Changes{% else %}Create Promo Card{% endif %}
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    // Only ask which section when the placement actually needs one
+    const placementSelect = document.getElementById('placement-select');
+    const afterSectionWrap = document.getElementById('after-section-wrap');
+    const afterSectionSelect = document.getElementById('after-section-select');
+
+    function syncPlacement() {
+        const needsSection = placementSelect.value === 'AFTER_SECTION';
+        afterSectionWrap.style.display = needsSection ? '' : 'none';
+        afterSectionSelect.required = needsSection;
+    }
+
+    placementSelect.addEventListener('change', syncPlacement);
+    syncPlacement();
+
+    // Update subcategories when category changes
+    const catSelect = document.getElementById('category-select');
+    const subSelect = document.getElementById('subcategory-select');
+
+    catSelect.addEventListener('change', function() {
+        const selected = this.options[this.selectedIndex];
+        const subsData = selected.getAttribute('data-subs') || '';
+
+        subSelect.innerHTML = '<option value="">-- Optional: Select Subcategory --</option>';
+
+        if (subsData) {
+            subsData.split('|').filter(s => s).forEach(pair => {
+                const [id, name] = pair.split(':');
+                const opt = document.createElement('option');
+                opt.value = id;
+                opt.textContent = name;
+                subSelect.appendChild(opt);
+            });
+        }
+    });
+</script>
+{% endblock %}

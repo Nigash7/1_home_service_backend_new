@@ -2,6 +2,28 @@ from django.db import models
 from django.conf import settings
 
 
+def normalise_form_responses(raw):
+    """
+    Turn stored form answers into a clean [{'title', 'answer'}] list.
+
+    Answers arrive as strings, or as lists from multi-select steps. Blank
+    answers are dropped so a question the customer skipped doesn't show up as
+    an empty row for the admin or the vendor on site.
+    """
+    responses = []
+    for entry in (raw or []):
+        if not isinstance(entry, dict):
+            continue
+        answer = entry.get('answer')
+        if isinstance(answer, (list, tuple)):
+            answer = ', '.join(str(a) for a in answer if str(a).strip())
+        answer = '' if answer is None else str(answer).strip()
+        if not answer:
+            continue
+        responses.append({'title': str(entry.get('title') or ''), 'answer': answer})
+    return responses
+
+
 class Booking(models.Model):
     """
     A customer's service request. Starts as PENDING (no vendor yet).
@@ -81,6 +103,63 @@ class Booking(models.Model):
 
     def __str__(self):
         return f"Booking #{self.id} - {self.customer} - {self.category} ({self.status})"
+
+    @property
+    def filled_forms(self):
+        """
+        FormSubmission rows for this booking.
+
+        A submission can be linked either way round — the app attaches it via
+        `Booking.form_submission` at checkout, while `FormSubmission.booking`
+        is the reverse link. Reading only one of them silently loses answers,
+        so this merges both and de-duplicates.
+        """
+        submissions = []
+        seen = set()
+        for submission in [self.form_submission, *self.form_submissions.all()]:
+            if submission is not None and submission.pk not in seen:
+                seen.add(submission.pk)
+                submissions.append(submission)
+        return submissions
+
+    @property
+    def form_answer_groups(self):
+        """
+        Every set of form answers on this booking, grouped by what they describe.
+
+        The app records them two different ways and both are in active use:
+
+          * Cart checkout answers the form locally and embeds the result in
+            `services_json[i]['form_data']` — no FormSubmission row is ever
+            created, so this is the only place those answers exist.
+          * The direct booking flow POSTs a FormSubmission and links it.
+
+        Reading either one alone loses the other's answers completely, which
+        is why the answers were invisible for cart bookings.
+
+        Returns [{'title': str, 'responses': [{'title': str, 'answer': str}]}].
+        """
+        groups = []
+
+        for item in (self.services_json or []):
+            if not isinstance(item, dict):
+                continue
+            responses = normalise_form_responses(item.get('form_data'))
+            if responses:
+                groups.append({
+                    'title': item.get('name') or 'Service',
+                    'responses': responses,
+                })
+
+        for submission in self.filled_forms:
+            responses = normalise_form_responses(submission.responses)
+            if responses:
+                groups.append({
+                    'title': submission.form.name,
+                    'responses': responses,
+                })
+
+        return groups
 
 
 class JobStartPhoto(models.Model):

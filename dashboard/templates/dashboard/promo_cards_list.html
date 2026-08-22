@@ -1,0 +1,118 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}Promo Cards{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <div class="flex justify-between items-start mb-6">
+        <div>
+            <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">Promo Cards</h1>
+            <p class="text-gray-500 mt-1">Large cards on the home page. Each one sits before, after, or in between your home sections.</p>
+        </div>
+        <a href="{% url 'promo_card_add' %}"
+           class="bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2 px-4 rounded-lg flex items-center gap-2 shadow-sm">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            Add Promo Card
+        </a>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {% for card in cards %}
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition">
+            <!-- Preview matching the app card -->
+            <div class="relative overflow-hidden bg-gray-200" style="aspect-ratio: 1 / 1;">
+                {% if card.image %}
+                    <img src="{{ card.image.url }}" alt="" class="w-full h-full object-cover">
+                {% endif %}
+                <div class="absolute inset-0" style="background: linear-gradient(to bottom, rgba(0,0,0,.45), rgba(0,0,0,0) 45%, rgba(0,0,0,.45));"></div>
+
+                <div class="absolute inset-0 p-4 flex flex-col">
+                    {% if card.badge_text %}
+                        <span class="self-start text-white text-xs font-semibold px-2.5 py-1 rounded-md"
+                              style="background-color: {{ card.badge_color }};">{{ card.badge_text }}</span>
+                        <div class="h-2"></div>
+                    {% endif %}
+                    <div class="text-white font-bold text-xl leading-tight">{{ card.title }}</div>
+                    {% if card.subtitle %}
+                        <div class="text-white/90 text-sm mt-1">{{ card.subtitle }}</div>
+                    {% endif %}
+                    <div class="mt-auto">
+                        <span class="inline-block bg-white text-gray-900 text-sm font-bold px-4 py-2 rounded-lg">{{ card.button_text }}</span>
+                    </div>
+                </div>
+
+                {% if card.is_active %}
+                    <span class="absolute top-3 right-3 bg-green-500 text-white text-xs font-semibold px-2 py-0.5 rounded-full shadow">Active</span>
+                {% else %}
+                    <span class="absolute top-3 right-3 bg-gray-500 text-white text-xs font-semibold px-2 py-0.5 rounded-full shadow">Inactive</span>
+                {% endif %}
+            </div>
+
+            <div class="p-4">
+                <div class="text-xs text-gray-500 mb-1">
+                    Position:
+                    <span class="text-gray-700 font-medium">
+                        {% if card.placement == 'BEFORE_SECTIONS' %}Before all sections
+                        {% elif card.placement == 'AFTER_SECTION' %}After &ldquo;{{ card.after_section.title }}&rdquo;
+                        {% else %}After all sections{% endif %}
+                    </span>
+                    <span class="text-gray-400">&middot; #{{ card.sort_order }}</span>
+                </div>
+                <div class="text-xs text-gray-500 mb-3">
+                    Opens:
+                    {% if card.subcategory %}
+                        <span class="text-gray-700 font-medium">{{ card.category.name }} &rarr; {{ card.subcategory.name }}</span>
+                    {% elif card.category %}
+                        <span class="text-gray-700 font-medium">{{ card.category.name }}</span>
+                    {% else %}
+                        <span class="text-orange-600">Not linked (tap does nothing)</span>
+                    {% endif %}
+                </div>
+
+                <div class="flex gap-2">
+                    <form method="post" action="{% url 'promo_card_toggle' card.id %}" class="flex-1">
+                        {% csrf_token %}
+                        <button type="submit"
+                                class="w-full text-xs font-semibold {% if card.is_active %}bg-orange-50 hover:bg-orange-100 text-orange-700{% else %}bg-green-50 hover:bg-green-100 text-green-700{% endif %} py-2 rounded-lg">
+                            {% if card.is_active %}Deactivate{% else %}Activate{% endif %}
+                        </button>
+                    </form>
+                    <a href="{% url 'promo_card_edit' card.id %}"
+                       class="flex-1 text-center text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-lg">
+                        Edit
+                    </a>
+                    <form method="post" action="{% url 'promo_card_delete' card.id %}"
+                          onsubmit="return confirm('Delete this promo card?')" class="flex-1">
+                        {% csrf_token %}
+                        <button type="submit"
+                                class="w-full text-xs font-semibold bg-red-50 hover:bg-red-100 text-red-600 py-2 rounded-lg">
+                            Delete
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-span-full">
+            <div class="bg-white rounded-2xl border border-gray-100 p-12 text-center">
+                <p class="text-gray-500 mb-4">No promo cards yet.</p>
+                <a href="{% url 'promo_card_add' %}"
+                   class="inline-block bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2 px-6 rounded-lg">
+                    Add First Promo Card
+                </a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

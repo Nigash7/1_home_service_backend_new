@@ -52,6 +52,7 @@ class VerifyOTPSerializer(serializers.Serializer):
     first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
     last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
     address = serializers.CharField(required=False, allow_blank=True)
+    referral_code = serializers.CharField(max_length=12, required=False, allow_blank=True)
 
     def validate(self, attrs):
         phone_number = attrs['phone_number'].strip()
@@ -81,6 +82,35 @@ class VerifyOTPSerializer(serializers.Serializer):
         attrs['_otp'] = otp
         return attrs
 
+    def _attach_referral(self, customer):
+        """
+        Records who invited this brand new customer. A bad or missing code is
+        not worth failing a signup over, so anything unexpected is ignored.
+        """
+        from referrals.models import Referral, ReferralCode, ReferralProgram
+
+        code = (self.validated_data.get('referral_code') or '').strip().upper()
+        if not code:
+            return
+
+        try:
+            program = ReferralProgram.get_solo()
+            if not program.is_active:
+                return
+
+            referral_code = ReferralCode.objects.filter(code=code).first()
+            # Nobody gets to refer themselves.
+            if referral_code is None or referral_code.customer_id == customer.id:
+                return
+
+            Referral.objects.create(
+                referrer=referral_code.customer,
+                referred_customer=customer,
+                code_used=code,
+            )
+        except Exception:
+            pass
+
     def verify_and_login(self):
         from customers.models import Customer
 
@@ -100,8 +130,11 @@ class VerifyOTPSerializer(serializers.Serializer):
             )
             user.set_unusable_password()  # no password login for phone/OTP accounts
             user.save()
-            Customer.objects.create(user=user, address=self.validated_data.get('address', ''))
+            customer = Customer.objects.create(
+                user=user, address=self.validated_data.get('address', '')
+            )
             is_new_user = True
+            self._attach_referral(customer)
 
         refresh = RefreshToken.for_user(user)
         return {

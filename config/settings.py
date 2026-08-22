@@ -53,6 +53,8 @@ INSTALLED_APPS = [
     'dashboard',
     'support',
     'notifications',
+    'referrals',
+    'branding',
 ]
 
 MIDDLEWARE = [
@@ -143,13 +145,13 @@ DATABASES = {
 # variables first (how Render supplies this) and falls back to the .env file
 # (how local dev supplies it). os.environ alone can't see .env, which silently
 # yields an unconfigured dummy backend.
-DATABASE_URL = config('DATABASE_URL', default='')
+# DATABASE_URL = config('DATABASE_URL', default='')
 
-if not DATABASE_URL:
-    raise ImproperlyConfigured(
-        "DATABASE_URL is not set. Add it to your .env file for local "
-        "development, or to the environment on the server."
-    )
+# if not DATABASE_URL:
+#     raise ImproperlyConfigured(
+#         "DATABASE_URL is not set. Add it to your .env file for local "
+#         "development, or to the environment on the server."
+#     )
 
 # DATABASES = {
 #     "default": dj_database_url.config(

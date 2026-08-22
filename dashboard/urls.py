@@ -18,7 +18,9 @@ urlpatterns = [
 
     # Vendors
     path('vendors/', views.vendors_list_view, name='vendors_list'),
+    path('vendors/add/', views.vendor_add_view, name='vendor_add'),
     path('vendors/<int:vendor_id>/', views.vendor_detail_view, name='vendor_detail'),
+    path('vendors/<int:vendor_id>/edit/', views.vendor_edit_view, name='vendor_edit'),
     path('vendors/<int:vendor_id>/verify/', views.verify_vendor_view, name='verify_vendor'),
 
     # Categories
@@ -41,6 +43,28 @@ urlpatterns = [
     path('services/<int:service_id>/edit/', views.service_edit_view, name='service_edit'),
     path('services/<int:service_id>/delete/', views.service_delete_view, name='service_delete'),
 
+
+    # App branding
+    path('branding/', views.branding_view, name='branding'),
+
+    # Refer & Earn
+    path('referrals/', views.referrals_list_view, name='referrals_list'),
+    path('referrals/settings/', views.referral_settings_view, name='referral_settings'),
+    path('referrals/<int:referral_id>/settle/', views.referral_settle_view, name='referral_settle'),
+
+    # Promo Cards (large home page cards around the home sections)
+    path('promo-cards/', views.promo_cards_list_view, name='promo_cards_list'),
+    path('promo-cards/add/', views.promo_card_add_view, name='promo_card_add'),
+    path('promo-cards/<int:card_id>/edit/', views.promo_card_edit_view, name='promo_card_edit'),
+    path('promo-cards/<int:card_id>/delete/', views.promo_card_delete_view, name='promo_card_delete'),
+    path('promo-cards/<int:card_id>/toggle/', views.promo_card_toggle_view, name='promo_card_toggle'),
+
+    # Header Banners (home hero carousel)
+    path('header-banners/', views.header_banners_list_view, name='header_banners_list'),
+    path('header-banners/add/', views.header_banner_add_view, name='header_banner_add'),
+    path('header-banners/<int:banner_id>/edit/', views.header_banner_edit_view, name='header_banner_edit'),
+    path('header-banners/<int:banner_id>/delete/', views.header_banner_delete_view, name='header_banner_delete'),
+    path('header-banners/<int:banner_id>/toggle/', views.header_banner_toggle_view, name='header_banner_toggle'),
 
     # Spotlights
     path('spotlights/', views.spotlights_list_view, name='spotlights_list'),

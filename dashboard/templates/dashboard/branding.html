@@ -1,0 +1,119 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}App Branding{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto">
+    <div class="mb-6">
+        <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">App Branding</h1>
+        <p class="text-gray-500 mt-1">The logo each mobile app shows on its splash and login screens.</p>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="mb-6 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+        <span class="font-semibold">This does not change the phone's home-screen icon.</span>
+        That icon is built into the installed app, so changing it needs a new APK release. What you set here
+        is the logo <em>inside</em> the app, and it updates on the next launch without any release.
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <!-- Customer app -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <h2 class="font-bold text-gray-900 mb-1">Customer App</h2>
+            <p class="text-xs text-gray-500 mb-4">Splash screen and phone-login screen</p>
+
+            <div class="mb-4 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-center" style="height: 170px;">
+                {% if customer_branding and customer_branding.logo %}
+                    <img src="{{ customer_branding.logo.url }}" alt="Customer app logo" class="max-h-32 max-w-full object-contain">
+                {% else %}
+                    <span class="text-sm text-gray-400">Using the logo bundled in the app</span>
+                {% endif %}
+            </div>
+
+            <form method="post" enctype="multipart/form-data" class="space-y-4">
+                {% csrf_token %}
+                <input type="hidden" name="app" value="CUSTOMER">
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Logo {% if not customer_branding %}*{% endif %}</label>
+                    <input type="file" name="logo" accept="image/*" {% if not customer_branding %}required{% endif %}
+                           class="w-full text-sm border border-gray-300 rounded-lg p-2 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary-100 file:text-primary-700 hover:file:bg-primary-200">
+                    <p class="text-xs text-gray-500 mt-1">Square PNG with a transparent background, around 512&times;512</p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">App Name</label>
+                    <input type="text" name="app_name" placeholder="Home Service"
+                           value="{% if customer_branding %}{{ customer_branding.app_name }}{% endif %}"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                    <p class="text-xs text-gray-500 mt-1">Shown under the logo. Leave blank to keep the app's built-in name.</p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Tagline</label>
+                    <input type="text" name="tagline" placeholder="Services at your doorstep"
+                           value="{% if customer_branding %}{{ customer_branding.tagline }}{% endif %}"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                </div>
+
+                <button type="submit"
+                        class="w-full bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2.5 rounded-lg">
+                    Save Customer Branding
+                </button>
+            </form>
+        </div>
+
+        <!-- Vendor app -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <h2 class="font-bold text-gray-900 mb-1">Vendor App</h2>
+            <p class="text-xs text-gray-500 mb-4">Vendor login screen</p>
+
+            <div class="mb-4 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-center" style="height: 170px;">
+                {% if vendor_branding and vendor_branding.logo %}
+                    <img src="{{ vendor_branding.logo.url }}" alt="Vendor app logo" class="max-h-32 max-w-full object-contain">
+                {% else %}
+                    <span class="text-sm text-gray-400">Using the icon built into the app</span>
+                {% endif %}
+            </div>
+
+            <form method="post" enctype="multipart/form-data" class="space-y-4">
+                {% csrf_token %}
+                <input type="hidden" name="app" value="VENDOR">
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Logo {% if not vendor_branding %}*{% endif %}</label>
+                    <input type="file" name="logo" accept="image/*" {% if not vendor_branding %}required{% endif %}
+                           class="w-full text-sm border border-gray-300 rounded-lg p-2 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary-100 file:text-primary-700 hover:file:bg-primary-200">
+                    <p class="text-xs text-gray-500 mt-1">Square PNG with a transparent background, around 512&times;512</p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">App Name</label>
+                    <input type="text" name="app_name" placeholder="Vendor Login"
+                           value="{% if vendor_branding %}{{ vendor_branding.app_name }}{% endif %}"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Tagline</label>
+                    <input type="text" name="tagline" placeholder="Use the credentials provided by your administrator"
+                           value="{% if vendor_branding %}{{ vendor_branding.tagline }}{% endif %}"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                </div>
+
+                <button type="submit"
+                        class="w-full bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2.5 rounded-lg">
+                    Save Vendor Branding
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,155 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}Referral Settings{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="flex items-center gap-3 mb-6">
+        <a href="{% url 'referrals_list' %}" class="text-gray-500 hover:text-gray-700">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+        </a>
+        <h1 class="text-2xl font-bold text-gray-900">Referral Programme</h1>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="mb-4 px-4 py-3 rounded-lg bg-blue-50 text-blue-800 text-sm">
+        Write <span class="font-mono font-semibold">{amount}</span> or
+        <span class="font-mono font-semibold">{friend_amount}</span> anywhere in the text below and the app
+        fills in the reward values &mdash; so changing an amount updates every screen at once.
+        In the share message, <span class="font-mono font-semibold">{code}</span> becomes the customer's own code.
+    </div>
+
+    <form method="post" class="space-y-5">
+        {% csrf_token %}
+
+        <!-- Rewards -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-5">
+            <h2 class="font-bold text-gray-900">Rewards</h2>
+
+            <label class="flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" name="is_active" {% if program.is_active %}checked{% endif %}
+                       class="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                <div>
+                    <div class="text-sm font-semibold text-gray-700">Programme active</div>
+                    <div class="text-xs text-gray-500">Unchecking hides the banner and card in the app and stops new referrals being recorded</div>
+                </div>
+            </label>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Referrer earns (&#8377;)</label>
+                    <input type="number" name="referrer_reward" min="0" step="1" value="{{ program.referrer_reward|floatformat:0 }}"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                    <p class="text-xs text-gray-500 mt-1">Paid when the friend's first booking completes</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Friend gets (&#8377;)</label>
+                    <input type="number" name="friend_reward" min="0" step="1" value="{{ program.friend_reward|floatformat:0 }}"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                    <p class="text-xs text-gray-500 mt-1">Used in the copy only &mdash; wire it to a coupon when ready</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Home banner -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
+            <h2 class="font-bold text-gray-900">Home page banner</h2>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Title</label>
+                <input type="text" name="home_banner_title" value="{{ program.home_banner_title }}"
+                       class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Subtitle</label>
+                <input type="text" name="home_banner_subtitle" value="{{ program.home_banner_subtitle }}"
+                       class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+            </div>
+        </div>
+
+        <!-- Profile card -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
+            <h2 class="font-bold text-gray-900">Profile page card</h2>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Title</label>
+                <input type="text" name="profile_card_title" value="{{ program.profile_card_title }}"
+                       class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Subtitle</label>
+                <input type="text" name="profile_card_subtitle" value="{{ program.profile_card_subtitle }}"
+                       class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Button text</label>
+                <input type="text" name="profile_card_button" value="{{ program.profile_card_button }}"
+                       class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+            </div>
+        </div>
+
+        <!-- Refer & Earn screen -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
+            <h2 class="font-bold text-gray-900">Refer &amp; Earn screen</h2>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Headline</label>
+                <input type="text" name="screen_title" value="{{ program.screen_title }}"
+                       class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Description</label>
+                <textarea name="screen_description" rows="3"
+                          class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">{{ program.screen_description }}</textarea>
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">How it works &mdash; step 1</label>
+                <input type="text" name="step_one" value="{{ program.step_one }}"
+                       class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">How it works &mdash; step 2</label>
+                <input type="text" name="step_two" value="{{ program.step_two }}"
+                       class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">How it works &mdash; step 3</label>
+                <input type="text" name="step_three" value="{{ program.step_three }}"
+                       class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Terms &amp; conditions</label>
+                <textarea name="terms" rows="3"
+                          class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">{{ program.terms }}</textarea>
+            </div>
+        </div>
+
+        <!-- Share message -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
+            <h2 class="font-bold text-gray-900">Share message</h2>
+            <div>
+                <textarea name="share_message" rows="3"
+                          class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">{{ program.share_message }}</textarea>
+                <p class="text-xs text-gray-500 mt-1">Sent to WhatsApp or copied to the clipboard. Must include <span class="font-mono">{code}</span>.</p>
+            </div>
+        </div>
+
+        <div class="flex gap-3 pb-4">
+            <a href="{% url 'referrals_list' %}"
+               class="flex-1 text-center bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold py-2.5 rounded-lg">
+                Cancel
+            </a>
+            <button type="submit"
+                    class="flex-1 bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2.5 rounded-lg">
+                Save Changes
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

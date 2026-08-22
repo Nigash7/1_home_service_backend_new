@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Review
+from .models import Review, service_ids_in_booking
 
 
 class ReviewCreateSerializer(serializers.ModelSerializer):
@@ -22,8 +22,28 @@ class ReviewCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("You have already reviewed this booking.")
         return value
 
+    def validate(self, attrs):
+        """A review may only point at a service the booking actually included."""
+        service = attrs.get('service')
+        booking = attrs.get('booking')
+        if service and booking and service.id not in service_ids_in_booking(booking):
+            raise serializers.ValidationError(
+                {'service': 'That service was not part of this booking.'}
+            )
+        return attrs
+
     def create(self, validated_data):
         booking = validated_data['booking']
+
+        # The app posts only booking/rating/comment, so without this every
+        # customer review lands with service=NULL and never surfaces on the
+        # service page. Booked exactly one service? Then it's unambiguous.
+        if not validated_data.get('service'):
+            service_ids = service_ids_in_booking(booking)
+            if len(service_ids) == 1:
+                validated_data.pop('service', None)
+                validated_data['service_id'] = service_ids[0]
+
         return Review.objects.create(
             customer=booking.customer,
             vendor=booking.vendor,

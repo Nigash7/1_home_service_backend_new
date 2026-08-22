@@ -12,15 +12,19 @@ class VendorProfileSerializer(serializers.ModelSerializer):
     first_name = serializers.CharField(source='user.first_name', read_only=True)
     last_name = serializers.CharField(source='user.last_name', read_only=True)
     phone_number = serializers.CharField(source='user.phone_number', read_only=True)
+    email = serializers.EmailField(source='user.email', read_only=True)
     categories = ServiceCategorySerializer(many=True, read_only=True)
 
     class Meta:
         model = Vendor
         fields = [
-            'id', 'username', 'first_name', 'last_name', 'phone_number',
+            'id', 'username', 'first_name', 'last_name', 'phone_number', 'email',
             'categories', 'service_area', 'address', 'verification_status', 'is_available',
+            # The app reads these back to show whether a work location is on
+            # file; without them the location screen can never confirm a save.
+            'latitude', 'longitude',
         ]
-        read_only_fields = ['verification_status', 'categories']
+        read_only_fields = ['verification_status', 'categories', 'latitude', 'longitude']
 
 
 class VendorAvailabilitySerializer(serializers.ModelSerializer):

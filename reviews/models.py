@@ -2,6 +2,27 @@ from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 
 
+def service_ids_in(services_json):
+    """
+    The service IDs inside a booking's `services_json` (entries look like
+    {id, name, price, qty}). Junk entries are skipped rather than raising.
+    """
+    ids = []
+    for item in (services_json or []):
+        if not isinstance(item, dict):
+            continue
+        try:
+            ids.append(int(item['id']))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return ids
+
+
+def service_ids_in_booking(booking):
+    """The service IDs a booking was placed for."""
+    return service_ids_in(getattr(booking, 'services_json', None))
+
+
 class Review(models.Model):
     booking = models.OneToOneField(
         'bookings.Booking', on_delete=models.CASCADE, related_name='review',

@@ -3,7 +3,8 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from accounts.permissions import IsCustomer
-from .models import Review
+from bookings.models import Booking
+from .models import Review, service_ids_in
 from .serializers import (
     ReviewCreateSerializer,
     ReviewListSerializer,
@@ -81,11 +82,32 @@ class ServiceReviewsView(APIView):
             'total_reviews': total,
             'reviews': serializer.data,
         })
+def _bookings_including_service(service_id):
+    """
+    Reviewed bookings whose basket contained this service.
+
+    Covers multi-service bookings, where one review legitimately spans several
+    services and so can't be pinned to a single `service` FK. Scoped to
+    reviewed bookings that have no FK of their own, so the scan stays small.
+    """
+    candidates = Booking.objects.filter(
+        review__isnull=False, review__service__isnull=True
+    ).values_list('id', 'services_json')
+
+    return [
+        booking_id for booking_id, services_json in candidates
+        if service_id in service_ids_in(services_json)
+    ]
+
+
 class IndividualServiceReviewsView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, service_id):
-        reviews = Review.objects.filter(service_id=service_id)
+        reviews = Review.objects.filter(
+            Q(service_id=service_id)
+            | Q(booking_id__in=_bookings_including_service(service_id))
+        ).distinct()
 
         if not reviews.exists():
             return Response({
@@ -102,7 +124,7 @@ class IndividualServiceReviewsView(APIView):
             'average_rating': round(avg, 2),
             'total_reviews': total,
             'reviews': serializer.data,
-        })        
+        })
 
 
 class BookingReviewView(APIView):

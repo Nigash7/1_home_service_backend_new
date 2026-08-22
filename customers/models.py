@@ -14,3 +14,26 @@ class Customer(models.Model):
 
     def __str__(self):
         return self.user.get_full_name() or self.user.username
+
+
+class ServiceView(models.Model):
+    """
+    One row per customer per service, holding only the latest visit. Keeping
+    it collapsed like this means "recently viewed" never shows the same
+    service twice and the table stays small.
+    """
+    customer = models.ForeignKey(
+        Customer, on_delete=models.CASCADE, related_name='service_views'
+    )
+    service = models.ForeignKey(
+        'services.Service', on_delete=models.CASCADE, related_name='views'
+    )
+    viewed_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-viewed_at']
+        unique_together = ('customer', 'service')
+        indexes = [models.Index(fields=['customer', '-viewed_at'])]
+
+    def __str__(self):
+        return f"{self.customer} viewed {self.service.name}"

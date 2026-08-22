@@ -10,10 +10,10 @@ from django.shortcuts import get_object_or_404, render, redirect
 from django.http import JsonResponse
 from django.utils import timezone
 from django.db import models
-from django.db.models import Avg
+from django.db.models import Avg, Q, Sum
 
 from bookings.models import Booking
-from vendors.models import Vendor
+from vendors.models import Vendor, VendorDocument
 from services.models import ServiceCategory  # adjust to your actual app name
 
 from .notifications import notify_customer
@@ -248,8 +248,9 @@ def bookings_list_view(request):
 def booking_detail_view(request, booking_id):
     booking = get_object_or_404(
         Booking.objects.select_related(
-            'customer__user', 'category', 'subcategory', 'vendor__user'
-        ).prefetch_related('form_submissions'),
+            'customer__user', 'category', 'subcategory', 'vendor__user',
+            'form_submission__form',
+        ).prefetch_related('form_submissions__form'),
         id=booking_id
     )
 
@@ -861,7 +862,372 @@ def service_delete_view(request, service_id):
         return redirect('services_list_sub', subcategory_id=subcategory_id)
     return redirect('services_list_cat', category_id=category_id)  
 
-from promotions.models import SpotlightBanner
+from branding.models import AppBranding
+
+
+# ---------- App Branding (logos shown inside the mobile apps) ----------
+
+@admin_login_required
+def branding_view(request):
+    if request.method == 'POST':
+        app = request.POST.get('app', '')
+        if app not in AppBranding.App.values:
+            messages.error(request, 'Unknown app.')
+            return redirect('branding')
+
+        logo = request.FILES.get('logo')
+        branding = AppBranding.objects.filter(app=app).first()
+
+        if branding is None and not logo:
+            messages.error(request, 'Upload a logo to set up this app.')
+            return redirect('branding')
+
+        try:
+            if branding is None:
+                branding = AppBranding(app=app)
+            if logo:
+                branding.logo = logo
+            branding.app_name = request.POST.get('app_name', '').strip()
+            branding.tagline = request.POST.get('tagline', '').strip()
+            branding.save()
+            messages.success(request, f'{branding.get_app_display()} branding updated.')
+        except Exception as e:
+            messages.error(request, f'Error: {e}')
+        return redirect('branding')
+
+    existing = {b.app: b for b in AppBranding.objects.all()}
+    return render(request, 'dashboard/branding.html', {
+        'admin_user': request.admin_user,
+        'active_page': 'branding',
+        'customer_branding': existing.get(AppBranding.App.CUSTOMER),
+        'vendor_branding': existing.get(AppBranding.App.VENDOR),
+    })
+
+
+from referrals.models import Referral, ReferralProgram
+
+
+# ---------- Referral Program Settings ----------
+
+REFERRAL_TEXT_FIELDS = [
+    'home_banner_title', 'home_banner_subtitle',
+    'profile_card_title', 'profile_card_subtitle', 'profile_card_button',
+    'screen_title', 'screen_description',
+    'step_one', 'step_two', 'step_three',
+    'share_message', 'terms',
+]
+
+
+@admin_login_required
+def referral_settings_view(request):
+    program = ReferralProgram.get_solo()
+
+    if request.method == 'POST':
+        try:
+            program.referrer_reward = request.POST.get('referrer_reward') or 0
+            program.friend_reward = request.POST.get('friend_reward') or 0
+            program.is_active = request.POST.get('is_active') == 'on'
+            for field in REFERRAL_TEXT_FIELDS:
+                setattr(program, field, request.POST.get(field, '').strip())
+            program.save()
+            messages.success(request, 'Referral programme updated.')
+            return redirect('referral_settings')
+        except Exception as e:
+            messages.error(request, f'Error: {e}')
+
+    return render(request, 'dashboard/referral_settings.html', {
+        'admin_user': request.admin_user,
+        'active_page': 'referrals',
+        'program': program,
+    })
+
+
+# ---------- Referral Ledger ----------
+
+@admin_login_required
+def referrals_list_view(request):
+    status = request.GET.get('status', '')
+    referrals = Referral.objects.select_related(
+        'referrer__user', 'referred_customer__user', 'first_booking'
+    )
+    if status:
+        referrals = referrals.filter(status=status)
+
+    all_referrals = Referral.objects.all()
+    owed = all_referrals.filter(status=Referral.Status.EARNED)
+
+    return render(request, 'dashboard/referrals_list.html', {
+        'admin_user': request.admin_user,
+        'active_page': 'referrals',
+        'referrals': referrals,
+        'status_filter': status,
+        'status_choices': Referral.Status.choices,
+        'total_count': all_referrals.count(),
+        'pending_count': all_referrals.filter(status=Referral.Status.PENDING).count(),
+        'owed_count': owed.count(),
+        'owed_amount': owed.aggregate(total=Sum('reward_amount'))['total'] or 0,
+    })
+
+
+@admin_login_required
+def referral_settle_view(request, referral_id):
+    if request.method != 'POST':
+        return redirect('referrals_list')
+
+    referral = get_object_or_404(Referral, id=referral_id)
+    if referral.status != Referral.Status.EARNED:
+        messages.error(request, 'Only an earned referral can be settled.')
+    else:
+        referral.mark_settled(request.POST.get('note', '').strip())
+        messages.success(request, 'Referral marked as settled.')
+    return redirect('referrals_list')
+
+
+from promotions.models import SpotlightBanner, HeaderBanner, PromoCard
+
+
+# ---------- Promo Cards List ----------
+
+@admin_login_required
+def promo_cards_list_view(request):
+    cards = PromoCard.objects.select_related(
+        'category', 'subcategory', 'after_section'
+    ).order_by('sort_order', '-created_at')
+
+    context = {
+        'admin_user': request.admin_user,
+        'active_page': 'promo_cards',
+        'cards': cards,
+    }
+    return render(request, 'dashboard/promo_cards_list.html', context)
+
+
+def _promo_card_form_context(request, card=None):
+    from home_sections.models import HomeSection
+    return {
+        'admin_user': request.admin_user,
+        'active_page': 'promo_cards',
+        'categories': ServiceCategory.objects.filter(is_active=True).prefetch_related('subcategories'),
+        'home_sections': HomeSection.objects.filter(is_active=True),
+        'placement_choices': PromoCard.PLACEMENT_CHOICES,
+        'card': card,
+        'is_edit': card is not None,
+    }
+
+
+def _read_promo_card_post(request):
+    """Pull the shared promo-card fields off the POST, returning (data, error)."""
+    placement = request.POST.get('placement') or PromoCard.PLACEMENT_AFTER
+    after_section_id = request.POST.get('after_section') or None
+
+    valid_placements = [c[0] for c in PromoCard.PLACEMENT_CHOICES]
+    if placement not in valid_placements:
+        return None, 'Please choose a valid placement.'
+    if placement == PromoCard.PLACEMENT_AFTER_SECTION and not after_section_id:
+        return None, 'Pick which home section this card should follow.'
+
+    data = {
+        'badge_text': request.POST.get('badge_text', '').strip(),
+        'badge_color': request.POST.get('badge_color', '').strip() or '#9C1458',
+        'title': request.POST.get('title', '').strip(),
+        'subtitle': request.POST.get('subtitle', '').strip(),
+        'button_text': request.POST.get('button_text', '').strip() or 'Book now',
+        'category_id': request.POST.get('category') or None,
+        'subcategory_id': request.POST.get('subcategory') or None,
+        'placement': placement,
+        'after_section_id': after_section_id,
+        'sort_order': request.POST.get('sort_order', '0') or 0,
+        'is_active': request.POST.get('is_active') == 'on',
+    }
+    if not data['title']:
+        return None, 'Title is required.'
+    return data, None
+
+
+# ---------- Add Promo Card ----------
+
+@admin_login_required
+def promo_card_add_view(request):
+    if request.method == 'POST':
+        image = request.FILES.get('image')
+        data, error = _read_promo_card_post(request)
+
+        if error:
+            messages.error(request, error)
+        elif not image:
+            messages.error(request, 'Image is required.')
+        else:
+            try:
+                PromoCard.objects.create(image=image, **data)
+                messages.success(request, f'Promo card "{data["title"]}" created.')
+                return redirect('promo_cards_list')
+            except Exception as e:
+                messages.error(request, f'Error: {e}')
+
+    return render(request, 'dashboard/promo_card_form.html', _promo_card_form_context(request))
+
+
+# ---------- Edit Promo Card ----------
+
+@admin_login_required
+def promo_card_edit_view(request, card_id):
+    card = get_object_or_404(PromoCard, id=card_id)
+
+    if request.method == 'POST':
+        data, error = _read_promo_card_post(request)
+
+        if error:
+            messages.error(request, error)
+        else:
+            for field, value in data.items():
+                setattr(card, field, value)
+            image = request.FILES.get('image')
+            if image:
+                card.image = image
+            card.save()
+            messages.success(request, f'Promo card "{card.title}" updated.')
+            return redirect('promo_cards_list')
+
+    return render(request, 'dashboard/promo_card_form.html', _promo_card_form_context(request, card))
+
+
+# ---------- Delete Promo Card ----------
+
+@admin_login_required
+def promo_card_delete_view(request, card_id):
+    if request.method != 'POST':
+        return redirect('promo_cards_list')
+
+    card = get_object_or_404(PromoCard, id=card_id)
+    title = card.title
+    card.delete()
+    messages.success(request, f'Promo card "{title}" deleted.')
+    return redirect('promo_cards_list')
+
+
+# ---------- Toggle Promo Card Active ----------
+
+@admin_login_required
+def promo_card_toggle_view(request, card_id):
+    if request.method != 'POST':
+        return redirect('promo_cards_list')
+
+    card = get_object_or_404(PromoCard, id=card_id)
+    card.is_active = not card.is_active
+    card.save()
+    status = 'activated' if card.is_active else 'deactivated'
+    messages.success(request, f'Promo card {status}.')
+    return redirect('promo_cards_list')
+
+
+# ---------- Header Banners (hero carousel) List ----------
+
+@admin_login_required
+def header_banners_list_view(request):
+    banners = HeaderBanner.objects.select_related('category', 'subcategory').order_by('sort_order', '-created_at')
+
+    context = {
+        'admin_user': request.admin_user,
+        'active_page': 'header_banners',
+        'banners': banners,
+    }
+    return render(request, 'dashboard/header_banners_list.html', context)
+
+
+# ---------- Add Header Banner ----------
+
+@admin_login_required
+def header_banner_add_view(request):
+    if request.method == 'POST':
+        title = request.POST.get('title', '').strip()
+        subtitle = request.POST.get('subtitle', '').strip()
+        category_id = request.POST.get('category') or None
+        subcategory_id = request.POST.get('subcategory') or None
+        sort_order = request.POST.get('sort_order', '0')
+        is_active = request.POST.get('is_active') == 'on'
+        image = request.FILES.get('image')
+
+        if not image:
+            messages.error(request, 'Image is required.')
+        else:
+            try:
+                HeaderBanner.objects.create(
+                    image=image,
+                    title=title,
+                    subtitle=subtitle,
+                    category_id=category_id,
+                    subcategory_id=subcategory_id,
+                    sort_order=sort_order or 0,
+                    is_active=is_active,
+                )
+                messages.success(request, 'Header banner created.')
+                return redirect('header_banners_list')
+            except Exception as e:
+                messages.error(request, f'Error: {e}')
+
+    return render(request, 'dashboard/header_banner_form.html', {
+        'admin_user': request.admin_user,
+        'active_page': 'header_banners',
+        'categories': ServiceCategory.objects.filter(is_active=True).prefetch_related('subcategories'),
+        'is_edit': False,
+    })
+
+
+# ---------- Edit Header Banner ----------
+
+@admin_login_required
+def header_banner_edit_view(request, banner_id):
+    banner = get_object_or_404(HeaderBanner, id=banner_id)
+
+    if request.method == 'POST':
+        banner.title = request.POST.get('title', '').strip()
+        banner.subtitle = request.POST.get('subtitle', '').strip()
+        banner.category_id = request.POST.get('category') or None
+        banner.subcategory_id = request.POST.get('subcategory') or None
+        banner.sort_order = request.POST.get('sort_order', '0') or 0
+        banner.is_active = request.POST.get('is_active') == 'on'
+        image = request.FILES.get('image')
+        if image:
+            banner.image = image
+        banner.save()
+        messages.success(request, 'Header banner updated.')
+        return redirect('header_banners_list')
+
+    return render(request, 'dashboard/header_banner_form.html', {
+        'admin_user': request.admin_user,
+        'active_page': 'header_banners',
+        'categories': ServiceCategory.objects.filter(is_active=True).prefetch_related('subcategories'),
+        'banner': banner,
+        'is_edit': True,
+    })
+
+
+# ---------- Delete Header Banner ----------
+
+@admin_login_required
+def header_banner_delete_view(request, banner_id):
+    if request.method != 'POST':
+        return redirect('header_banners_list')
+
+    banner = get_object_or_404(HeaderBanner, id=banner_id)
+    banner.delete()
+    messages.success(request, 'Header banner deleted.')
+    return redirect('header_banners_list')
+
+
+# ---------- Toggle Header Banner Active ----------
+
+@admin_login_required
+def header_banner_toggle_view(request, banner_id):
+    if request.method != 'POST':
+        return redirect('header_banners_list')
+
+    banner = get_object_or_404(HeaderBanner, id=banner_id)
+    banner.is_active = not banner.is_active
+    banner.save()
+    status = 'activated' if banner.is_active else 'deactivated'
+    messages.success(request, f'Header banner {status}.')
+    return redirect('header_banners_list')
 
 
 # ---------- Spotlights List ----------
@@ -2216,29 +2582,67 @@ def admin_user_delete_view(request, user_id):
     return redirect('admin_users_list')
 
 from support.models import SupportTicket, TicketMessage
+from support.notifications import (
+    notify_requester_of_reply, notify_requester_of_status,
+)
 
 
 @admin_login_required
 def support_tickets_view(request):
+    """
+    One inbox for both audiences. `who` splits it into Customers / Vendors,
+    `status` filters the workflow state, `q` searches subject and requester.
+    """
     status_filter = request.GET.get('status', '')
-    tickets = SupportTicket.objects.select_related('customer__user').prefetch_related('messages')
+    who_filter = request.GET.get('who', '')
+    query = request.GET.get('q', '').strip()
+
+    tickets = SupportTicket.objects.select_related(
+        'customer__user', 'vendor__user', 'booking'
+    ).prefetch_related('messages')
 
     if status_filter:
         tickets = tickets.filter(status=status_filter)
+
+    if who_filter in (SupportTicket.RaisedBy.CUSTOMER, SupportTicket.RaisedBy.VENDOR):
+        tickets = tickets.filter(raised_by=who_filter)
+
+    if query:
+        tickets = tickets.filter(
+            Q(subject__icontains=query)
+            | Q(customer__user__username__icontains=query)
+            | Q(customer__user__first_name__icontains=query)
+            | Q(customer__user__last_name__icontains=query)
+            | Q(customer__user__phone_number__icontains=query)
+            | Q(vendor__user__username__icontains=query)
+            | Q(vendor__user__first_name__icontains=query)
+            | Q(vendor__user__last_name__icontains=query)
+            | Q(vendor__user__phone_number__icontains=query)
+        )
 
     tickets = tickets.order_by('-updated_at')
 
     paginator = Paginator(tickets, 20)
     page_obj = paginator.get_page(request.GET.get('page', 1))
 
-    open_count = SupportTicket.objects.filter(status='OPEN').count()
+    all_tickets = SupportTicket.objects.all()
+    open_statuses = [SupportTicket.Status.OPEN, SupportTicket.Status.IN_PROGRESS]
 
     context = {
         'admin_user': request.admin_user,
         'active_page': 'support',
         'page_obj': page_obj,
         'current_status': status_filter,
-        'open_count': open_count,
+        'current_who': who_filter,
+        'query': query,
+        'status_tabs': [('', 'All')] + list(SupportTicket.Status.choices),
+        'open_count': all_tickets.filter(status=SupportTicket.Status.OPEN).count(),
+        'customer_open_count': all_tickets.filter(
+            raised_by=SupportTicket.RaisedBy.CUSTOMER, status__in=open_statuses
+        ).count(),
+        'vendor_open_count': all_tickets.filter(
+            raised_by=SupportTicket.RaisedBy.VENDOR, status__in=open_statuses
+        ).count(),
     }
     return render(request, 'dashboard/support_tickets.html', context)
 
@@ -2246,7 +2650,9 @@ def support_tickets_view(request):
 @admin_login_required
 def support_ticket_detail_view(request, ticket_id):
     ticket = get_object_or_404(
-        SupportTicket.objects.select_related('customer__user', 'booking').prefetch_related('messages'),
+        SupportTicket.objects.select_related(
+            'customer__user', 'vendor__user', 'booking'
+        ).prefetch_related('messages'),
         id=ticket_id
     )
 
@@ -2257,28 +2663,42 @@ def support_ticket_detail_view(request, ticket_id):
             message = request.POST.get('message', '').strip()
             if message:
                 TicketMessage.objects.create(
-                    ticket=ticket, sender='ADMIN', message=message
+                    ticket=ticket, sender=TicketMessage.Sender.ADMIN, message=message
                 )
-                if ticket.status == 'OPEN':
-                    ticket.status = 'IN_PROGRESS'
+                if ticket.status == SupportTicket.Status.OPEN:
+                    ticket.status = SupportTicket.Status.IN_PROGRESS
                 ticket.save()
+                notify_requester_of_reply(ticket, message)
                 messages.success(request, 'Reply sent.')
 
         elif action == 'update_status':
             new_status = request.POST.get('status')
-            if new_status:
+            valid = dict(SupportTicket.Status.choices)
+            if new_status in valid and new_status != ticket.status:
                 ticket.status = new_status
                 ticket.save()
+                notify_requester_of_status(ticket)
                 messages.success(request, 'Status updated.')
 
         return redirect('support_ticket_detail', ticket_id=ticket.id)
+
+    if ticket.is_from_vendor:
+        vendor = ticket.vendor
+        recent_jobs = Booking.objects.filter(vendor=vendor).select_related(
+            'category', 'customer__user'
+        ).order_by('-created_at')[:5]
+    else:
+        vendor = None
+        recent_jobs = None
 
     context = {
         'admin_user': request.admin_user,
         'active_page': 'support',
         'ticket': ticket,
+        'vendor': vendor,
+        'recent_jobs': recent_jobs,
     }
-    return render(request, 'dashboard/support_ticket_detail.html', context)    
+    return render(request, 'dashboard/support_ticket_detail.html', context)
 
 
 # ================= ASSIGNMENT CENTER =================
@@ -2406,6 +2826,30 @@ def assignment_center_view(request):
     }
     return render(request, 'dashboard/assignment_center.html', context)    
 
+def _save_vendor_documents(request, vendor):
+    """
+    Stores any files posted by the Documents rows on the vendor form.
+
+    The template disables the type dropdown of any row with no file chosen, so
+    the two lists arrive the same length and line up index for index.
+    Returns how many documents were saved.
+    """
+    doc_types = request.POST.getlist('doc_type[]')
+    doc_files = request.FILES.getlist('doc_file[]')
+
+    saved = 0
+    for doc_type, doc_file in zip(doc_types, doc_files):
+        if not doc_file:
+            continue
+        VendorDocument.objects.create(
+            vendor=vendor,
+            doc_type=doc_type or VendorDocument.DocType.OTHER,
+            file=doc_file,
+        )
+        saved += 1
+    return saved
+
+
 @admin_login_required
 def vendor_add_view(request):
     if request.method == 'POST':
@@ -2458,11 +2902,16 @@ def vendor_add_view(request):
                     longitude=longitude,
                     verification_status=verification_status,
                     is_available=is_available,
+                    status=status,
                 )
                 if category_ids:
                     vendor.categories.set(category_ids)
 
+                saved_docs = _save_vendor_documents(request, vendor)
+
                 messages.success(request, f'Vendor "{first_name}" created with login "{username}".')
+                if saved_docs:
+                    messages.success(request, f'{saved_docs} document(s) uploaded.')
                 return redirect('vendor_detail', vendor_id=vendor.id)
             except Exception as e:
                 messages.error(request, f'Error: {e}')
@@ -2520,14 +2969,19 @@ def vendor_edit_view(request, vendor_id):
             vendor.longitude = longitude
             vendor.verification_status = verification_status
             vendor.is_available = is_available
+            vendor.status = status
             vendor.save()
 
             vendor.categories.set(category_ids)
+
+            saved_docs = _save_vendor_documents(request, vendor)
 
             if new_password:
                 messages.success(request, 'Vendor updated and password reset.')
             else:
                 messages.success(request, 'Vendor updated.')
+            if saved_docs:
+                messages.success(request, f'{saved_docs} document(s) uploaded.')
             return redirect('vendor_detail', vendor_id=vendor.id)
 
     return render(request, 'dashboard/vendor_form.html', {

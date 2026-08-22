@@ -1,0 +1,132 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}Refer & Earn{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <div class="flex justify-between items-start mb-6">
+        <div>
+            <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">Refer &amp; Earn</h1>
+            <p class="text-gray-500 mt-1">Who invited whom, and which rewards are still owed.</p>
+        </div>
+        <a href="{% url 'referral_settings' %}"
+           class="bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2 px-4 rounded-lg flex items-center gap-2 shadow-sm">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+            </svg>
+            Programme Settings
+        </a>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <!-- Summary -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <div class="text-xs text-gray-500 uppercase tracking-wide font-semibold">Total referrals</div>
+            <div class="text-3xl font-bold text-gray-900 mt-1">{{ total_count }}</div>
+        </div>
+        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <div class="text-xs text-gray-500 uppercase tracking-wide font-semibold">Awaiting first booking</div>
+            <div class="text-3xl font-bold text-gray-900 mt-1">{{ pending_count }}</div>
+        </div>
+        <div class="bg-white rounded-2xl border border-orange-200 shadow-sm p-5">
+            <div class="text-xs text-orange-600 uppercase tracking-wide font-semibold">Rewards owed</div>
+            <div class="text-3xl font-bold text-orange-700 mt-1">&#8377;{{ owed_amount }}</div>
+            <div class="text-xs text-gray-500 mt-1">across {{ owed_count }} referral{{ owed_count|pluralize }}</div>
+        </div>
+    </div>
+
+    <!-- Filter -->
+    <div class="flex gap-2 mb-4">
+        <a href="{% url 'referrals_list' %}"
+           class="text-xs font-semibold px-3 py-2 rounded-lg {% if not status_filter %}bg-primary-600 text-white{% else %}bg-white border border-gray-200 text-gray-700 hover:bg-gray-50{% endif %}">
+            All
+        </a>
+        {% for value, label in status_choices %}
+            <a href="?status={{ value }}"
+               class="text-xs font-semibold px-3 py-2 rounded-lg {% if status_filter == value %}bg-primary-600 text-white{% else %}bg-white border border-gray-200 text-gray-700 hover:bg-gray-50{% endif %}">
+                {{ label }}
+            </a>
+        {% endfor %}
+    </div>
+
+    <!-- Table -->
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
+                    <tr>
+                        <th class="text-left font-semibold px-5 py-3">Referrer</th>
+                        <th class="text-left font-semibold px-5 py-3">Invited friend</th>
+                        <th class="text-left font-semibold px-5 py-3">Code</th>
+                        <th class="text-left font-semibold px-5 py-3">Status</th>
+                        <th class="text-left font-semibold px-5 py-3">Reward</th>
+                        <th class="text-left font-semibold px-5 py-3">Joined</th>
+                        <th class="text-right font-semibold px-5 py-3">Action</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for r in referrals %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-5 py-4">
+                            <div class="font-medium text-gray-900">{{ r.referrer.user.get_full_name|default:r.referrer.user.username }}</div>
+                            <div class="text-xs text-gray-500">{{ r.referrer.user.phone_number }}</div>
+                        </td>
+                        <td class="px-5 py-4">
+                            <div class="font-medium text-gray-900">{{ r.referred_customer.user.get_full_name|default:r.referred_customer.user.username }}</div>
+                            <div class="text-xs text-gray-500">{{ r.referred_customer.user.phone_number }}</div>
+                        </td>
+                        <td class="px-5 py-4"><span class="font-mono text-xs bg-gray-100 px-2 py-1 rounded">{{ r.code_used }}</span></td>
+                        <td class="px-5 py-4">
+                            {% if r.status == 'PENDING' %}
+                                <span class="bg-gray-100 text-gray-700 text-xs font-semibold px-2.5 py-1 rounded-full">Awaiting booking</span>
+                            {% elif r.status == 'EARNED' %}
+                                <span class="bg-orange-100 text-orange-700 text-xs font-semibold px-2.5 py-1 rounded-full">Reward owed</span>
+                            {% else %}
+                                <span class="bg-green-100 text-green-700 text-xs font-semibold px-2.5 py-1 rounded-full">Settled</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-5 py-4 font-semibold text-gray-900">
+                            {% if r.status == 'PENDING' %}&mdash;{% else %}&#8377;{{ r.reward_amount }}{% endif %}
+                        </td>
+                        <td class="px-5 py-4 text-gray-500 text-xs">{{ r.created_at|date:"d M Y" }}</td>
+                        <td class="px-5 py-4 text-right">
+                            {% if r.status == 'EARNED' %}
+                                <form method="post" action="{% url 'referral_settle' r.id %}" class="flex gap-2 justify-end"
+                                      onsubmit="return confirm('Mark this reward as paid out?')">
+                                    {% csrf_token %}
+                                    <input type="text" name="note" placeholder="How it was paid"
+                                           class="text-xs border border-gray-300 rounded-lg px-2 py-1.5 w-36">
+                                    <button type="submit"
+                                            class="text-xs font-semibold bg-green-50 hover:bg-green-100 text-green-700 px-3 py-1.5 rounded-lg whitespace-nowrap">
+                                        Mark settled
+                                    </button>
+                                </form>
+                            {% elif r.status == 'SETTLED' %}
+                                <span class="text-xs text-gray-500">{{ r.settled_note|default:"Settled" }}</span>
+                            {% else %}
+                                <span class="text-xs text-gray-400">&mdash;</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="px-5 py-12 text-center text-gray-500">
+                            No referrals yet. They appear here as soon as someone signs up with a referral code.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

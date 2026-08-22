@@ -105,17 +105,26 @@
             </div>
 
             <!-- Form responses -->
-            {% for submission in booking.form_submissions.all %}
+            {% if booking.form_answer_groups %}
             <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-                <h2 class="text-base font-semibold text-gray-900 mb-4">Form: {{ submission.form.name }}</h2>
-                {% for resp in submission.responses %}
-                <div class="text-sm py-2 border-b border-gray-50 last:border-0">
-                    <div class="text-gray-500">{{ resp.title }}</div>
-                    <div class="text-gray-900 mt-0.5">{{ resp.answer|default:"—" }}</div>
+                <h2 class="text-base font-semibold text-gray-900 mb-4">
+                    Customer's Answers
+                </h2>
+                {% for group in booking.form_answer_groups %}
+                <div class="{% if not forloop.first %}mt-5 pt-5 border-t border-gray-100{% endif %}">
+                    <div class="text-xs font-semibold uppercase tracking-wide text-primary-600 mb-2">
+                        {{ group.title }}
+                    </div>
+                    {% for resp in group.responses %}
+                    <div class="text-sm py-2 border-b border-gray-50 last:border-0">
+                        <div class="text-gray-500">{{ resp.title }}</div>
+                        <div class="text-gray-900 mt-0.5 whitespace-pre-line">{{ resp.answer }}</div>
+                    </div>
+                    {% endfor %}
                 </div>
                 {% endfor %}
             </div>
-            {% endfor %}
+            {% endif %}
         </div>
 
         <!-- Right column: actions -->

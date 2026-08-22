@@ -117,6 +117,12 @@ def booking_post_save(sender, instance, created, **kwargs):
                           booking=instance, context=ctx)
             return
 
+        # Assigning a vendor normally flips the status in the SAME save, so
+        # the two blocks below can reach for the same event. Whatever the
+        # first one sends is recorded here and the second one skips it —
+        # otherwise the customer and the vendor each get told twice.
+        already_sent = set()
+
         # --- vendor newly attached (may happen without a status change) ---
         old_vendor_id = getattr(instance, "_notify_old_vendor_id", None)
         new_vendor_id = vendor.pk if vendor else None
@@ -124,22 +130,28 @@ def booking_post_save(sender, instance, created, **kwargs):
             if customer:
                 notify(events.BOOKING_VENDOR_ASSIGNED.key, customer=customer,
                        booking=instance, context=ctx)
+                already_sent.add(events.BOOKING_VENDOR_ASSIGNED.key)
             notify(events.JOB_ASSIGNED.key, vendor=vendor,
                    booking=instance, context=ctx)
+            already_sent.add(events.JOB_ASSIGNED.key)
         elif old_vendor_id and not new_vendor_id:
             old_vendor = _vendor_model().objects.filter(pk=old_vendor_id).first()
             if old_vendor:
                 notify(events.JOB_UNASSIGNED.key, vendor=old_vendor,
                        booking=instance, context=ctx)
+                already_sent.add(events.JOB_UNASSIGNED.key)
 
         # --- status transition -------------------------------------------
         if status and status != old_status:
             mapping = STATUS_EVENTS.get(status) or {}
-            if mapping.get("customer") and customer:
-                notify(mapping["customer"], customer=customer,
+            customer_event = mapping.get("customer")
+            vendor_event = mapping.get("vendor")
+
+            if customer_event and customer and customer_event not in already_sent:
+                notify(customer_event, customer=customer,
                        booking=instance, context=ctx)
-            if mapping.get("vendor") and vendor and status != "VENDOR_ASSIGNED":
-                notify(mapping["vendor"], vendor=vendor,
+            if vendor_event and vendor and vendor_event not in already_sent:
+                notify(vendor_event, vendor=vendor,
                        booking=instance, context=ctx)
             if mapping.get("admin"):
                 notify_admins(mapping["admin"], booking=instance, context=ctx)
