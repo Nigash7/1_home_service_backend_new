@@ -31,7 +31,8 @@ class MyBookingsListView(generics.ListAPIView):
         return Booking.objects.filter(
             customer=self.request.user.customer_profile
         ).select_related(
-            'customer__user', 'category', 'subcategory', 'vendor__user'
+            'customer__user', 'category', 'subcategory', 'vendor__user',
+            'preferred_vendor__user',
         ).order_by('-created_at')
 
 
@@ -47,7 +48,8 @@ class AssignedBookingsListView(generics.ListAPIView):
         return Booking.objects.filter(
             vendor=self.request.user.vendor_profile
         ).exclude(status=Booking.Status.PENDING).select_related(
-            'customer__user', 'category', 'subcategory', 'vendor__user'
+            'customer__user', 'category', 'subcategory', 'vendor__user',
+            'preferred_vendor__user',
         ).order_by('-assigned_at')
 
 

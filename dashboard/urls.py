@@ -85,6 +85,20 @@ urlpatterns = [
 
 
 
+    # Pro Vendors (customer-facing vendor showcase)
+    path('pro-vendors/', views.pro_vendors_list_view, name='pro_vendors_list'),
+    path('pro-vendors/<int:vendor_id>/toggle/', views.pro_vendor_toggle_view, name='pro_vendor_toggle'),
+
+    # Pro Vendor Sections
+    path('pro-vendor-sections/', views.pro_vendor_sections_list_view, name='pro_vendor_sections_list'),
+    path('pro-vendor-sections/add/', views.pro_vendor_section_add_view, name='pro_vendor_section_add'),
+    path('pro-vendor-sections/<int:section_id>/', views.pro_vendor_section_detail_view, name='pro_vendor_section_detail'),
+    path('pro-vendor-sections/<int:section_id>/edit/', views.pro_vendor_section_edit_view, name='pro_vendor_section_edit'),
+    path('pro-vendor-sections/<int:section_id>/delete/', views.pro_vendor_section_delete_view, name='pro_vendor_section_delete'),
+    path('pro-vendor-sections/<int:section_id>/add-vendor/', views.pro_vendor_section_add_item_view, name='pro_vendor_section_add_item'),
+    path('pro-vendor-section-items/<int:item_id>/remove/', views.pro_vendor_section_remove_item_view, name='pro_vendor_section_remove_item'),
+    path('pro-vendor-section-items/<int:item_id>/reorder/', views.pro_vendor_section_reorder_view, name='pro_vendor_section_reorder'),
+
     # Curations
     path('curations/', views.curations_list_view, name='curations_list'),
     path('curations/add/', views.curation_section_add_view, name='curation_section_add'),

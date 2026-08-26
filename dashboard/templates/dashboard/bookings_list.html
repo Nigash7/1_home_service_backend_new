@@ -79,6 +79,11 @@
                         </td>
                         <td class="px-4 py-3 text-sm text-gray-700">
                             {% if booking.vendor %}{{ booking.vendor.user.get_full_name }}{% else %}<span class="text-gray-400">—</span>{% endif %}
+                            {% if booking.preferred_vendor %}
+                            <div class="text-xs text-primary-600 mt-0.5" title="Pro the customer picked in the app">
+                                ★ asked for {{ booking.preferred_vendor.display_name }}
+                            </div>
+                            {% endif %}
                         </td>
                         <td class="px-4 py-3">
                             <span class="text-xs font-semibold px-2 py-1 rounded-full

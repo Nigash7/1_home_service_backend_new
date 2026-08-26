@@ -93,6 +93,7 @@
                                 <div class="text-xs text-gray-500 mt-1">
                                     {{ booking.preferred_date|date:"M d, Y" }}
                                     {% if booking.vendor %} · Vendor: {{ booking.vendor.user.get_full_name }}{% endif %}
+                                    {% if booking.preferred_vendor %} · <span class="text-primary-600">Requested pro: {{ booking.preferred_vendor.display_name }}</span>{% endif %}
                                 </div>
                             </div>
                             <div class="text-right">

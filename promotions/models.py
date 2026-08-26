@@ -26,6 +26,16 @@ class HeaderBanner(models.Model):
         null=True, blank=True,
         related_name='header_banners',
     )
+    # A banner can point at a Pro Vendor instead of a category — tapping it
+    # opens that vendor's profile in the customer app. Takes precedence over
+    # the category/subcategory target when both are filled in.
+    pro_vendor = models.ForeignKey(
+        'vendors.Vendor',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='header_banners',
+        help_text="Open this Pro Vendor's profile when the customer taps",
+    )
 
     is_active = models.BooleanField(default=True)
     sort_order = models.PositiveIntegerField(default=0, help_text="Lower number = shown first")
@@ -76,6 +86,16 @@ class PromoCard(models.Model):
         on_delete=models.SET_NULL,
         null=True, blank=True,
         related_name='promo_cards',
+    )
+    # A banner can point at a Pro Vendor instead of a category — tapping it
+    # opens that vendor's profile in the customer app. Takes precedence over
+    # the category/subcategory target when both are filled in.
+    pro_vendor = models.ForeignKey(
+        'vendors.Vendor',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='promo_cards',
+        help_text="Open this Pro Vendor's profile when the customer taps",
     )
 
     # Where the card sits on the home screen
@@ -129,6 +149,16 @@ class SpotlightBanner(models.Model):
         on_delete=models.SET_NULL,
         null=True, blank=True,
         related_name='spotlight_banners',
+    )
+    # A banner can point at a Pro Vendor instead of a category — tapping it
+    # opens that vendor's profile in the customer app. Takes precedence over
+    # the category/subcategory target when both are filled in.
+    pro_vendor = models.ForeignKey(
+        'vendors.Vendor',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='spotlight_banners',
+        help_text="Open this Pro Vendor's profile when the customer taps",
     )
 
     is_active = models.BooleanField(default=True)

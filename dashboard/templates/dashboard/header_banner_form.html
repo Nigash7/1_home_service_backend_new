@@ -87,6 +87,24 @@
                 <p class="text-xs text-gray-500 mt-1">Leave empty to make the slide non-tappable.</p>
             </div>
 
+            <!-- Or link straight to a Pro Vendor -->
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Or open a Pro Vendor</label>
+                <select name="pro_vendor"
+                        class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                    <option value="">-- None --</option>
+                    {% for vendor in pro_vendors %}
+                        <option value="{{ vendor.id }}"
+                                {% if is_edit and banner.pro_vendor_id == vendor.id %}selected{% endif %}>
+                            {{ vendor.display_name }}{% if vendor.pro_title %} — {{ vendor.pro_title }}{% endif %}
+                        </option>
+                    {% endfor %}
+                </select>
+                <p class="text-xs text-gray-500 mt-1">
+                    When set, tapping the slide opens this vendor's profile instead of the category above.
+                </p>
+            </div>
+
             <!-- Sort order -->
             <div>
                 <label class="block text-sm font-semibold text-gray-700 mb-2">Sort Order</label>

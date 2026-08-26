@@ -143,6 +143,129 @@
                     </div>
                     <p class="text-xs text-gray-500 mt-1">Select all categories this vendor can work in</p>
                 </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-gray-700 mb-2">Narrow coverage (optional)</label>
+                    <p class="text-xs text-gray-500 mb-2">
+                        Leave a category untouched and this vendor covers all of it. Tick subcategories or
+                        individual services to limit them to just those &mdash; useful for a small vendor who
+                        only handles part of a category. Ticking anything inside a category means the rest of
+                        that category is no longer theirs.
+                    </p>
+                    <div class="max-h-72 overflow-y-auto border border-gray-200 rounded-lg p-3 space-y-4">
+                        {% for entry in coverage_tree %}
+                        <div>
+                            <div class="text-xs font-bold text-gray-700 uppercase tracking-wide">{{ entry.category.name }}</div>
+
+                            {% for svc in entry.direct_services %}
+                            <label class="flex items-center gap-2 ml-3 mt-1.5 cursor-pointer">
+                                <input type="checkbox" name="services" value="{{ svc.id }}"
+                                       {% if is_edit and svc.id in vendor_service_ids %}checked{% endif %}
+                                       class="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                                <span class="text-sm text-gray-700">{{ svc.name }}</span>
+                            </label>
+                            {% endfor %}
+
+                            {% for group in entry.subcategories %}
+                            <label class="flex items-center gap-2 ml-3 mt-1.5 cursor-pointer">
+                                <input type="checkbox" name="subcategories" value="{{ group.subcategory.id }}"
+                                       {% if is_edit and group.subcategory.id in vendor_subcategory_ids %}checked{% endif %}
+                                       class="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                                <span class="text-sm font-medium text-gray-700">{{ group.subcategory.name }}</span>
+                                <span class="text-xs text-gray-400">(whole subcategory)</span>
+                            </label>
+                            {% for svc in group.services %}
+                            <label class="flex items-center gap-2 ml-8 mt-1 cursor-pointer">
+                                <input type="checkbox" name="services" value="{{ svc.id }}"
+                                       {% if is_edit and svc.id in vendor_service_ids %}checked{% endif %}
+                                       class="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                                <span class="text-xs text-gray-600">{{ svc.name }}</span>
+                            </label>
+                            {% endfor %}
+                            {% endfor %}
+
+                            {% if not entry.direct_services and not entry.subcategories %}
+                            <div class="ml-3 mt-1 text-xs text-gray-400">No services yet</div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pro Vendor showcase -->
+            <div class="border border-gray-200 rounded-xl p-4 space-y-4">
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" name="is_pro" id="is-pro-toggle"
+                           {% if is_edit and vendor.is_pro %}checked{% endif %}
+                           class="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                    <span class="text-sm font-semibold text-gray-700">Pro Vendor</span>
+                </label>
+                <p class="text-xs text-gray-500 -mt-2">
+                    Shows this vendor to customers with their own profile page. They can then be
+                    curated into Pro Vendor sections and pointed at from banners.
+                    <span class="text-amber-600">Only verified vendors appear in the app.</span>
+                </p>
+
+                <div id="pro-fields" class="space-y-4 {% if not is_edit or not vendor.is_pro %}hidden{% endif %}">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-700 mb-1">Headline</label>
+                            <input type="text" name="pro_title" maxlength="100"
+                                   value="{% if is_edit %}{{ vendor.pro_title }}{% endif %}"
+                                   placeholder="e.g. Master Electrician"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-700 mb-1">Years of experience</label>
+                            <input type="number" name="experience_years" min="0"
+                                   value="{% if is_edit %}{{ vendor.experience_years }}{% else %}0{% endif %}"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-700 mb-1">Tagline</label>
+                        <input type="text" name="pro_tagline" maxlength="160"
+                               value="{% if is_edit %}{{ vendor.pro_tagline }}{% endif %}"
+                               placeholder="One line shown on the pro vendor card"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-700 mb-1">About</label>
+                        <textarea name="pro_bio" rows="3"
+                                  placeholder="Longer intro shown on the profile page"
+                                  class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">{% if is_edit %}{{ vendor.pro_bio }}{% endif %}</textarea>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-700 mb-1">Photo (square)</label>
+                            {% if is_edit and vendor.pro_photo %}
+                            <img src="{{ vendor.pro_photo.url }}" alt="" class="w-16 h-16 rounded-lg object-cover mb-2 border border-gray-200">
+                            {% endif %}
+                            <input type="file" name="pro_photo" accept="image/*"
+                                   class="w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:bg-gray-100 file:text-gray-700">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-700 mb-1">Profile banner (wide)</label>
+                            {% if is_edit and vendor.pro_banner %}
+                            <img src="{{ vendor.pro_banner.url }}" alt="" class="w-full h-16 rounded-lg object-cover mb-2 border border-gray-200">
+                            {% endif %}
+                            <input type="file" name="pro_banner" accept="image/*"
+                                   class="w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:bg-gray-100 file:text-gray-700">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-700 mb-1">Sort order</label>
+                        <input type="number" name="pro_sort_order" min="0"
+                               value="{% if is_edit %}{{ vendor.pro_sort_order }}{% else %}0{% endif %}"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                        <p class="text-xs text-gray-500 mt-1">Lower number = listed first among pro vendors</p>
+                    </div>
+                </div>
             </div>
 
             <!-- Status -->
@@ -232,6 +355,19 @@ document.addEventListener('DOMContentLoaded', function () {
                 </button>
             </div>
         </form>
+
+<script>
+    // The showcase fields only matter for a Pro, so keep them out of the way
+    // until the box is ticked.
+    (function () {
+        var toggle = document.getElementById('is-pro-toggle');
+        var fields = document.getElementById('pro-fields');
+        if (!toggle || !fields) return;
+        toggle.addEventListener('change', function () {
+            fields.classList.toggle('hidden', !toggle.checked);
+        });
+    })();
+</script>
     </div>
 </div>
 {% endblock %}

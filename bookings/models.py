@@ -75,6 +75,12 @@ class Booking(models.Model):
         max_length=20, blank=True, default='',
         help_text="How the vendor was assigned: 'Manual' or 'Auto'"
     )
+    preferred_vendor = models.ForeignKey(
+        'vendors.Vendor', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='requested_bookings',
+        help_text="Pro vendor the customer asked for while booking. Only a "
+                  "request -- the admin still decides who is assigned.",
+    )
 
     preferred_date = models.DateField()
     preferred_time = models.TimeField()

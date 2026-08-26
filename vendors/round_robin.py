@@ -4,6 +4,30 @@ from .models import Vendor
 from datetime import datetime, UTC
 
 
+def _covering_the_job(vendors, booking):
+    """
+    Drops vendors who do not do every service on the booking.
+
+    Falls through untouched when the booking has no services recorded -- older
+    bookings predate services_json and there is nothing to check them against.
+    """
+    if booking is None:
+        return vendors
+
+    from services.models import Service
+    from reviews.models import service_ids_in
+
+    service_ids = service_ids_in(getattr(booking, 'services_json', None))
+    if not service_ids:
+        return vendors
+
+    booked = list(Service.objects.filter(id__in=service_ids))
+    if not booked:
+        return vendors
+
+    return [v for v in vendors if all(v.covers(s) for s in booked)]
+
+
 def get_rotation_queue(category, booking=None):
     """
     Returns eligible vendors for a category, ordered by round-robin priority.
@@ -12,11 +36,18 @@ def get_rotation_queue(category, booking=None):
     vendors = Vendor.objects.filter(
         verification_status='VERIFIED',
         categories=category,
-    ).exclude(status='OFFLINE').select_related('user').annotate(
+    ).exclude(status='OFFLINE').select_related('user').prefetch_related(
+        'categories', 'subcategories', 'services'
+    ).annotate(
         active_jobs=Count('assigned_bookings', filter=Q(
             assigned_bookings__status__in=['ASSIGNED', 'IN_PROGRESS']
         )),
     )
+
+    # A vendor who only handles part of the category must not be rotated onto
+    # a job outside their part. Vendors who never narrowed themselves cover
+    # the whole category, so this changes nothing for them.
+    vendors = _covering_the_job(vendors, booking)
 
     # Order: never-assigned first (last_assigned_at is null), then oldest assignment
     # Secondary sort: fewer active jobs

@@ -1,0 +1,125 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}Pro Vendors{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+    <div class="flex justify-between items-start mb-6">
+        <div>
+            <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">Pro Vendors</h1>
+            <p class="text-gray-500 mt-1">
+                Vendors shown to customers with their own profile page. Flag a vendor as Pro from their vendor page.
+            </p>
+        </div>
+        <a href="{% url 'vendors_list' %}"
+           class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold py-2 px-4 rounded-lg">
+            All Vendors
+        </a>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    {% if unverified_count %}
+    <div class="mb-4 px-4 py-3 rounded-lg text-sm bg-amber-50 text-amber-800">
+        {{ unverified_count }} pro vendor{{ unverified_count|pluralize }} {{ unverified_count|pluralize:"is,are" }}
+        not verified yet, so {{ unverified_count|pluralize:"it does,they do" }} not appear in the customer app.
+    </div>
+    {% endif %}
+
+    <!-- Search -->
+    <form method="get" class="mb-5 flex gap-2">
+        <input type="text" name="search" value="{{ search }}"
+               placeholder="Search by name or headline"
+               class="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+        <button type="submit"
+                class="bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold px-5 py-2 rounded-lg">
+            Search
+        </button>
+        {% if search %}
+        <a href="{% url 'pro_vendors_list' %}"
+           class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold px-5 py-2 rounded-lg flex items-center">
+            Clear
+        </a>
+        {% endif %}
+    </form>
+
+    <div class="space-y-3">
+        {% for vendor in vendors %}
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition">
+            <div class="flex items-start gap-4">
+                <span class="bg-gray-100 text-gray-600 text-xs font-semibold px-2 py-1 rounded-full shrink-0">
+                    #{{ vendor.pro_sort_order }}
+                </span>
+
+                {% if vendor.pro_photo %}
+                    <img src="{{ vendor.pro_photo.url }}" alt="" class="w-14 h-14 rounded-xl object-cover shrink-0">
+                {% else %}
+                    <div class="w-14 h-14 rounded-xl bg-gray-100 flex items-center justify-center shrink-0 text-gray-400 text-lg font-bold">
+                        {{ vendor.display_name|first|upper }}
+                    </div>
+                {% endif %}
+
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap mb-1">
+                        <h2 class="text-lg font-bold text-gray-900">{{ vendor.display_name }}</h2>
+                        {% if vendor.verification_status == 'VERIFIED' %}
+                            <span class="bg-green-100 text-green-700 text-xs font-semibold px-2 py-0.5 rounded-full">Verified</span>
+                        {% else %}
+                            <span class="bg-amber-100 text-amber-700 text-xs font-semibold px-2 py-0.5 rounded-full">
+                                {{ vendor.get_verification_status_display }} — hidden in app
+                            </span>
+                        {% endif %}
+                    </div>
+
+                    {% if vendor.pro_title %}
+                        <p class="text-sm font-medium text-gray-700">{{ vendor.pro_title }}</p>
+                    {% endif %}
+                    {% if vendor.pro_tagline %}
+                        <p class="text-sm text-gray-500">{{ vendor.pro_tagline }}</p>
+                    {% endif %}
+
+                    <div class="flex items-center gap-4 text-xs text-gray-500 mt-2 flex-wrap">
+                        <span>⭐ {{ vendor.average_rating }} ({{ vendor.total_reviews }} review{{ vendor.total_reviews|pluralize }})</span>
+                        <span>🧰 {{ vendor.experience_years }} yr{{ vendor.experience_years|pluralize }} experience</span>
+                        <span>📍 {{ vendor.service_area }}</span>
+                        <span>
+                            {% for label in vendor.coverage_labels %}{{ label }}{% if not forloop.last %}, {% endif %}{% empty %}Nothing assigned{% endfor %}
+                        </span>
+                    </div>
+                </div>
+
+                <div class="flex gap-2 ml-4 shrink-0">
+                    <a href="{% url 'vendor_edit' vendor.id %}"
+                       class="text-xs font-semibold bg-primary-100 hover:bg-primary-200 text-primary-700 py-2 px-3 rounded-lg">
+                        Edit Profile
+                    </a>
+                    <form method="post" action="{% url 'pro_vendor_toggle' vendor.id %}"
+                          onsubmit="return confirm('Remove this vendor from the Pro list?')">
+                        {% csrf_token %}
+                        <button type="submit"
+                                class="text-xs font-semibold bg-red-50 hover:bg-red-100 text-red-600 py-2 px-3 rounded-lg">
+                            Un-Pro
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="bg-white rounded-2xl border border-gray-100 p-12 text-center">
+            <p class="text-gray-500 mb-4">No pro vendors yet.</p>
+            <p class="text-sm text-gray-400">
+                Open a vendor from
+                <a href="{% url 'vendors_list' %}" class="text-primary-600 hover:underline">All Vendors</a>,
+                tick <strong>Pro Vendor</strong> on their form and fill in the showcase details.
+            </p>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

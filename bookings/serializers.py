@@ -20,6 +20,7 @@ class BookingCreateSerializer(serializers.ModelSerializer):
             'amount',
             'discount_amount', 'coupon_code', 'discount_details',
             'form_submission',
+            'preferred_vendor',
             'status', 'created_at',
         ]
         read_only_fields = ['id', 'status', 'created_at', 'amount']
@@ -73,6 +74,9 @@ class BookingListSerializer(serializers.ModelSerializer):
     customer_address = serializers.CharField(source='customer.address', read_only=True)
     customer_phone = serializers.SerializerMethodField()
     vendor_name = serializers.SerializerMethodField()
+    preferred_vendor_name = serializers.CharField(
+        source='preferred_vendor.display_name', read_only=True, default=None
+    )
     form_name = serializers.SerializerMethodField()
     form_groups = serializers.SerializerMethodField()
     form_responses = serializers.SerializerMethodField()
@@ -82,7 +86,8 @@ class BookingListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'category', 'category_name', 'subcategory', 'subcategory_name',
             'customer_name', 'customer_address', 'customer_phone',
-            'vendor', 'vendor_name', 'preferred_date', 'preferred_time', 'status',
+            'vendor', 'vendor_name', 'preferred_vendor', 'preferred_vendor_name',
+            'preferred_date', 'preferred_time', 'status',
             'amount', 'payment_status', 'notes', 'services_json',
            'address_text', 'address_state', 'address_district', 'address_pincode',
             'location_lat', 'location_lng',

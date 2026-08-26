@@ -99,7 +99,7 @@
             <div class="col-span-2">
                 <div class="text-gray-500 text-xs">Approved categories</div>
                 <div class="text-gray-900">
-                    {% for category in vendor.categories.all %}{{ category.name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
+                    {% for label in vendor.coverage_labels %}{{ label }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
                 </div>
             </div>
             {% if ticket.booking %}

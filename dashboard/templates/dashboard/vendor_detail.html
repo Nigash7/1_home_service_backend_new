@@ -52,12 +52,20 @@
                         <div class="text-gray-900 font-medium">{{ vendor.user.email|default:"—" }}</div>
                     </div>
                     <div class="col-span-2">
-                        <div class="text-gray-500">Categories</div>
+                        <div class="text-gray-500">Works on</div>
                         <div class="flex flex-wrap gap-2 mt-1">
-                            {% for cat in vendor.categories.all %}
-                                <span class="text-xs bg-primary-100 text-primary-700 px-2 py-1 rounded-full">{{ cat.name }}</span>
+                            {% for label in vendor.coverage_labels %}
+                                <span class="text-xs bg-primary-100 text-primary-700 px-2 py-1 rounded-full">{{ label }}</span>
+                            {% empty %}
+                                <span class="text-xs text-gray-400">Nothing assigned yet</span>
                             {% endfor %}
                         </div>
+                        {% if vendor.subcategories.exists or vendor.services.exists %}
+                        <p class="text-xs text-gray-500 mt-1">
+                            Limited to part of
+                            {% for cat in vendor.categories.all %}{{ cat.name }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                        </p>
+                        {% endif %}
                     </div>
                     {% if vendor.latitude and vendor.longitude %}
                     <div class="col-span-2">
@@ -66,6 +74,56 @@
                     </div>
                     {% endif %}
                 </div>
+            </div>
+
+            <!-- Verification documents -->
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-base font-semibold text-gray-900">
+                        Verification Documents ({{ vendor.documents.count }})
+                    </h2>
+                    {% if vendor.verification_status == 'PENDING' %}
+                    <span class="text-xs font-semibold bg-orange-100 text-orange-700 px-2 py-1 rounded-full">
+                        Review before verifying
+                    </span>
+                    {% endif %}
+                </div>
+
+                {% if vendor.documents.all %}
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {% for doc in vendor.documents.all %}
+                    <a href="{{ doc.file.url }}" target="_blank" rel="noopener"
+                       class="group block border border-gray-200 rounded-xl overflow-hidden hover:border-primary-400 hover:shadow-md transition">
+                        <div class="h-36 bg-gray-50 flex items-center justify-center overflow-hidden">
+                            {% if doc.is_image %}
+                                <img src="{{ doc.file.url }}" alt="{{ doc.get_doc_type_display }}"
+                                     class="w-full h-full object-cover group-hover:scale-105 transition">
+                            {% else %}
+                                <div class="text-center px-2">
+                                    <svg class="w-10 h-10 mx-auto text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                              d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                                    </svg>
+                                    <div class="text-xs text-gray-500 mt-2 break-all">{{ doc.filename }}</div>
+                                </div>
+                            {% endif %}
+                        </div>
+                        <div class="px-3 py-2 border-t border-gray-100">
+                            <div class="text-sm font-medium text-gray-900">{{ doc.get_doc_type_display }}</div>
+                            <div class="text-xs text-gray-500">{{ doc.uploaded_at|date:"M d, Y" }}</div>
+                        </div>
+                    </a>
+                    {% endfor %}
+                </div>
+                <p class="text-xs text-gray-400 mt-3">Click a document to open the full-size file in a new tab.</p>
+                {% else %}
+                <p class="text-sm text-gray-500">
+                    No documents uploaded.
+                    {% if vendor.verification_status == 'PENDING' %}
+                    There is nothing to check against for this application.
+                    {% endif %}
+                </p>
+                {% endif %}
             </div>
 
             <!-- Jobs -->

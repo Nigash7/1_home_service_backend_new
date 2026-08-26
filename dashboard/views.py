@@ -207,7 +207,7 @@ def bookings_list_view(request):
     search = request.GET.get('search', '').strip()
 
     bookings = Booking.objects.select_related(
-        'customer__user', 'category', 'vendor__user'
+        'customer__user', 'category', 'vendor__user', 'preferred_vendor__user'
     ).order_by('-created_at')
 
     if status:
@@ -249,7 +249,7 @@ def booking_detail_view(request, booking_id):
     booking = get_object_or_404(
         Booking.objects.select_related(
             'customer__user', 'category', 'subcategory', 'vendor__user',
-            'form_submission__form',
+            'preferred_vendor__user', 'form_submission__form',
         ).prefetch_related('form_submissions__form'),
         id=booking_id
     )
@@ -404,12 +404,14 @@ def vendors_list_view(request):
     availability = request.GET.get('availability', '')
     search = request.GET.get('search', '').strip()
 
-    vendors = Vendor.objects.select_related('user').prefetch_related('categories').order_by('-id')
+    vendors = Vendor.objects.select_related('user').prefetch_related(
+        'categories', 'subcategories', 'services'
+    ).order_by('-id')
 
     if verification:
         vendors = vendors.filter(verification_status=verification)
     if category_id:
-        vendors = vendors.filter(categories__id=category_id)
+        vendors = vendors.for_category(category_id)
     if availability == 'available':
         vendors = vendors.filter(is_available=True)
     elif availability == 'unavailable':
@@ -442,7 +444,9 @@ def vendors_list_view(request):
 @admin_login_required
 def vendor_detail_view(request, vendor_id):
     vendor = get_object_or_404(
-        Vendor.objects.select_related('user').prefetch_related('categories'),
+        Vendor.objects.select_related('user').prefetch_related(
+            'categories', 'subcategories', 'services', 'documents'
+        ),
         id=vendor_id
     )
 
@@ -1002,6 +1006,13 @@ def promo_cards_list_view(request):
     return render(request, 'dashboard/promo_cards_list.html', context)
 
 
+def _pro_vendors_for_forms():
+    """Pro vendors a banner may be pointed at — verified ones only."""
+    return Vendor.objects.pro().select_related('user').order_by(
+        'pro_sort_order', 'user__first_name'
+    )
+
+
 def _promo_card_form_context(request, card=None):
     from home_sections.models import HomeSection
     return {
@@ -1009,6 +1020,7 @@ def _promo_card_form_context(request, card=None):
         'active_page': 'promo_cards',
         'categories': ServiceCategory.objects.filter(is_active=True).prefetch_related('subcategories'),
         'home_sections': HomeSection.objects.filter(is_active=True),
+        'pro_vendors': _pro_vendors_for_forms(),
         'placement_choices': PromoCard.PLACEMENT_CHOICES,
         'card': card,
         'is_edit': card is not None,
@@ -1034,6 +1046,7 @@ def _read_promo_card_post(request):
         'button_text': request.POST.get('button_text', '').strip() or 'Book now',
         'category_id': request.POST.get('category') or None,
         'subcategory_id': request.POST.get('subcategory') or None,
+        'pro_vendor_id': request.POST.get('pro_vendor') or None,
         'placement': placement,
         'after_section_id': after_section_id,
         'sort_order': request.POST.get('sort_order', '0') or 0,
@@ -1143,6 +1156,7 @@ def header_banner_add_view(request):
         subtitle = request.POST.get('subtitle', '').strip()
         category_id = request.POST.get('category') or None
         subcategory_id = request.POST.get('subcategory') or None
+        pro_vendor_id = request.POST.get('pro_vendor') or None
         sort_order = request.POST.get('sort_order', '0')
         is_active = request.POST.get('is_active') == 'on'
         image = request.FILES.get('image')
@@ -1157,6 +1171,7 @@ def header_banner_add_view(request):
                     subtitle=subtitle,
                     category_id=category_id,
                     subcategory_id=subcategory_id,
+                    pro_vendor_id=pro_vendor_id,
                     sort_order=sort_order or 0,
                     is_active=is_active,
                 )
@@ -1169,6 +1184,7 @@ def header_banner_add_view(request):
         'admin_user': request.admin_user,
         'active_page': 'header_banners',
         'categories': ServiceCategory.objects.filter(is_active=True).prefetch_related('subcategories'),
+        'pro_vendors': _pro_vendors_for_forms(),
         'is_edit': False,
     })
 
@@ -1184,6 +1200,7 @@ def header_banner_edit_view(request, banner_id):
         banner.subtitle = request.POST.get('subtitle', '').strip()
         banner.category_id = request.POST.get('category') or None
         banner.subcategory_id = request.POST.get('subcategory') or None
+        banner.pro_vendor_id = request.POST.get('pro_vendor') or None
         banner.sort_order = request.POST.get('sort_order', '0') or 0
         banner.is_active = request.POST.get('is_active') == 'on'
         image = request.FILES.get('image')
@@ -1197,6 +1214,7 @@ def header_banner_edit_view(request, banner_id):
         'admin_user': request.admin_user,
         'active_page': 'header_banners',
         'categories': ServiceCategory.objects.filter(is_active=True).prefetch_related('subcategories'),
+        'pro_vendors': _pro_vendors_for_forms(),
         'banner': banner,
         'is_edit': True,
     })
@@ -1254,6 +1272,7 @@ def spotlight_add_view(request):
         button_text = request.POST.get('button_text', 'Book now').strip()
         category_id = request.POST.get('category') or None
         subcategory_id = request.POST.get('subcategory') or None
+        pro_vendor_id = request.POST.get('pro_vendor') or None
         sort_order = request.POST.get('sort_order', '0')
         is_active = request.POST.get('is_active') == 'on'
         background_image = request.FILES.get('background_image')
@@ -1270,6 +1289,7 @@ def spotlight_add_view(request):
                     button_text=button_text or 'Book now',
                     category_id=category_id,
                     subcategory_id=subcategory_id,
+                    pro_vendor_id=pro_vendor_id,
                     sort_order=sort_order or 0,
                     is_active=is_active,
                     background_image=background_image,
@@ -1283,6 +1303,7 @@ def spotlight_add_view(request):
         'admin_user': request.admin_user,
         'active_page': 'spotlights',
         'categories': ServiceCategory.objects.filter(is_active=True).prefetch_related('subcategories'),
+        'pro_vendors': _pro_vendors_for_forms(),
         'is_edit': False,
     })
 
@@ -1299,6 +1320,7 @@ def spotlight_edit_view(request, spotlight_id):
         button_text = request.POST.get('button_text', 'Book now').strip()
         category_id = request.POST.get('category') or None
         subcategory_id = request.POST.get('subcategory') or None
+        pro_vendor_id = request.POST.get('pro_vendor') or None
         sort_order = request.POST.get('sort_order', '0')
         is_active = request.POST.get('is_active') == 'on'
         background_image = request.FILES.get('background_image')
@@ -1311,6 +1333,7 @@ def spotlight_edit_view(request, spotlight_id):
             banner.button_text = button_text or 'Book now'
             banner.category_id = category_id
             banner.subcategory_id = subcategory_id
+            banner.pro_vendor_id = pro_vendor_id
             banner.sort_order = sort_order or 0
             banner.is_active = is_active
             if background_image:
@@ -1323,6 +1346,7 @@ def spotlight_edit_view(request, spotlight_id):
         'admin_user': request.admin_user,
         'active_page': 'spotlights',
         'categories': ServiceCategory.objects.filter(is_active=True).prefetch_related('subcategories'),
+        'pro_vendors': _pro_vendors_for_forms(),
         'banner': banner,
         'is_edit': True,
     })
@@ -2446,7 +2470,9 @@ def customer_detail_view(request, customer_id):
         Customer.objects.select_related('user'), id=customer_id
     )
 
-    bookings = customer.bookings.select_related('category', 'vendor__user').order_by('-created_at')
+    bookings = customer.bookings.select_related(
+        'category', 'vendor__user', 'preferred_vendor__user'
+    ).order_by('-created_at')
     bookings_paginator = Paginator(bookings, 10)
     bookings_page = bookings_paginator.get_page(request.GET.get('bookings_page', 1))
 
@@ -2826,6 +2852,70 @@ def assignment_center_view(request):
     }
     return render(request, 'dashboard/assignment_center.html', context)    
 
+def _coverage_tree():
+    """
+    Categories -> their subcategories -> services, for the coverage picker.
+
+    Built here rather than in the template because a category's `services`
+    reverse accessor holds everything in it, subcategory ones included, and a
+    template cannot split those apart.
+    """
+    categories = ServiceCategory.objects.filter(is_active=True).prefetch_related(
+        'subcategories__services', 'services'
+    ).order_by('name')
+
+    tree = []
+    for category in categories:
+        tree.append({
+            'category': category,
+            'direct_services': [
+                s for s in category.services.all()
+                if s.subcategory_id is None and s.is_active
+            ],
+            'subcategories': [
+                {
+                    'subcategory': sub,
+                    'services': [s for s in sub.services.all() if s.is_active],
+                }
+                for sub in category.subcategories.all()
+            ],
+        })
+    return tree
+
+
+def _apply_vendor_coverage(request, vendor):
+    """
+    Stores which subcategories / services this vendor actually handles.
+
+    Empty means "the whole category", which is how every vendor worked before
+    these fields existed, so an untouched form keeps the old behaviour.
+    """
+    vendor.subcategories.set(request.POST.getlist('subcategories'))
+    vendor.services.set(request.POST.getlist('services'))
+
+
+def _apply_pro_vendor_fields(request, vendor):
+    """
+    Copies the Pro Vendor showcase panel off the vendor form onto the vendor.
+
+    Images are only replaced when a new file is actually chosen, so saving the
+    form without touching the file inputs keeps the photo already on file.
+    """
+    vendor.is_pro = request.POST.get('is_pro') == 'on'
+    vendor.pro_title = request.POST.get('pro_title', '').strip()
+    vendor.pro_tagline = request.POST.get('pro_tagline', '').strip()
+    vendor.pro_bio = request.POST.get('pro_bio', '').strip()
+    vendor.experience_years = request.POST.get('experience_years') or 0
+    vendor.pro_sort_order = request.POST.get('pro_sort_order') or 0
+
+    photo = request.FILES.get('pro_photo')
+    if photo:
+        vendor.pro_photo = photo
+    banner = request.FILES.get('pro_banner')
+    if banner:
+        vendor.pro_banner = banner
+
+
 def _save_vendor_documents(request, vendor):
     """
     Stores any files posted by the Documents rows on the vendor form.
@@ -2906,6 +2996,10 @@ def vendor_add_view(request):
                 )
                 if category_ids:
                     vendor.categories.set(category_ids)
+                _apply_vendor_coverage(request, vendor)
+
+                _apply_pro_vendor_fields(request, vendor)
+                vendor.save()
 
                 saved_docs = _save_vendor_documents(request, vendor)
 
@@ -2920,6 +3014,7 @@ def vendor_add_view(request):
         'admin_user': request.admin_user,
         'active_page': 'vendors',
         'categories': ServiceCategory.objects.filter(is_active=True).order_by('name'),
+        'coverage_tree': _coverage_tree(),
         'is_edit': False,
     })
 
@@ -2970,9 +3065,11 @@ def vendor_edit_view(request, vendor_id):
             vendor.verification_status = verification_status
             vendor.is_available = is_available
             vendor.status = status
+            _apply_pro_vendor_fields(request, vendor)
             vendor.save()
 
             vendor.categories.set(category_ids)
+            _apply_vendor_coverage(request, vendor)
 
             saved_docs = _save_vendor_documents(request, vendor)
 
@@ -2988,8 +3085,11 @@ def vendor_edit_view(request, vendor_id):
         'admin_user': request.admin_user,
         'active_page': 'vendors',
         'categories': ServiceCategory.objects.filter(is_active=True).order_by('name'),
+        'coverage_tree': _coverage_tree(),
         'vendor': vendor,
         'vendor_category_ids': list(vendor.categories.values_list('id', flat=True)),
+        'vendor_subcategory_ids': list(vendor.subcategories.values_list('id', flat=True)),
+        'vendor_service_ids': list(vendor.services.values_list('id', flat=True)),
         'is_edit': True,
     })
     # ---------- Auto-Assign (Round Robin) ----------
@@ -3062,3 +3162,228 @@ def bulk_auto_assign_view(request):
 
     messages.success(request, f'Auto-assigned {assigned_count} bookings via round-robin.')
     return redirect('assignment_center')
+
+
+# ===========================================================================
+# Pro Vendors — the vendors put on show in the Customer app, plus the
+# sections that curate them onto the home screen.
+# ===========================================================================
+
+from home_sections.models import ProVendorSection, ProVendorSectionItem
+
+
+@admin_login_required
+def pro_vendors_list_view(request):
+    """Every vendor currently flagged as a Pro, in the order customers see."""
+    search = request.GET.get('search', '').strip()
+
+    vendors = (
+        Vendor.objects.filter(is_pro=True)
+        .select_related('user')
+        .prefetch_related('categories', 'subcategories', 'services')
+        .with_review_stats()
+        .order_by('pro_sort_order', 'id')
+    )
+    if search:
+        vendors = vendors.filter(
+            models.Q(user__first_name__icontains=search) |
+            models.Q(user__last_name__icontains=search) |
+            models.Q(pro_title__icontains=search)
+        )
+
+    context = {
+        'admin_user': request.admin_user,
+        'active_page': 'pro_vendors',
+        'vendors': vendors,
+        'search': search,
+        # Anything not verified is invisible to customers — call it out rather
+        # than letting an admin wonder why their pro never showed up.
+        'unverified_count': vendors.exclude(verification_status='VERIFIED').count(),
+    }
+    return render(request, 'dashboard/pro_vendors_list.html', context)
+
+
+@admin_login_required
+def pro_vendor_toggle_view(request, vendor_id):
+    if request.method != 'POST':
+        return redirect('pro_vendors_list')
+
+    vendor = get_object_or_404(Vendor.objects.select_related('user'), id=vendor_id)
+    vendor.is_pro = not vendor.is_pro
+    vendor.save(update_fields=['is_pro'])
+
+    state = 'is now a Pro Vendor' if vendor.is_pro else 'is no longer a Pro Vendor'
+    messages.success(request, f'{vendor.display_name} {state}.')
+    return redirect(request.POST.get('next') or 'pro_vendors_list')
+
+
+# ---------- Pro Vendor Sections ----------
+
+@admin_login_required
+def pro_vendor_sections_list_view(request):
+    sections = ProVendorSection.objects.prefetch_related('items').order_by(
+        'sort_order', '-created_at'
+    )
+    context = {
+        'admin_user': request.admin_user,
+        'active_page': 'pro_vendor_sections',
+        'sections': sections,
+    }
+    return render(request, 'dashboard/pro_vendor_sections_list.html', context)
+
+
+def _read_pro_vendor_section_post(request):
+    """Shared field read for the add and edit forms. Returns (data, error)."""
+    title = request.POST.get('title', '').strip()
+    if not title:
+        return None, 'Title is required.'
+
+    return {
+        'title': title,
+        'subtitle': request.POST.get('subtitle', '').strip(),
+        'home_display_limit': request.POST.get('home_display_limit') or 5,
+        'sort_order': request.POST.get('sort_order') or 0,
+        'is_active': request.POST.get('is_active') == 'on',
+    }, None
+
+
+@admin_login_required
+def pro_vendor_section_add_view(request):
+    if request.method == 'POST':
+        data, error = _read_pro_vendor_section_post(request)
+        if error:
+            messages.error(request, error)
+        else:
+            section = ProVendorSection.objects.create(**data)
+            messages.success(request, f'Section "{section.title}" created.')
+            return redirect('pro_vendor_section_detail', section_id=section.id)
+
+    return render(request, 'dashboard/pro_vendor_section_form.html', {
+        'admin_user': request.admin_user,
+        'active_page': 'pro_vendor_sections',
+        'is_edit': False,
+    })
+
+
+@admin_login_required
+def pro_vendor_section_edit_view(request, section_id):
+    section = get_object_or_404(ProVendorSection, id=section_id)
+
+    if request.method == 'POST':
+        data, error = _read_pro_vendor_section_post(request)
+        if error:
+            messages.error(request, error)
+        else:
+            for field, value in data.items():
+                setattr(section, field, value)
+            section.save()
+            messages.success(request, 'Section updated.')
+            return redirect('pro_vendor_section_detail', section_id=section.id)
+
+    return render(request, 'dashboard/pro_vendor_section_form.html', {
+        'admin_user': request.admin_user,
+        'active_page': 'pro_vendor_sections',
+        'section': section,
+        'is_edit': True,
+    })
+
+
+@admin_login_required
+def pro_vendor_section_delete_view(request, section_id):
+    if request.method != 'POST':
+        return redirect('pro_vendor_sections_list')
+
+    section = get_object_or_404(ProVendorSection, id=section_id)
+    title = section.title
+    section.delete()
+    messages.success(request, f'Section "{title}" deleted.')
+    return redirect('pro_vendor_sections_list')
+
+
+@admin_login_required
+def pro_vendor_section_detail_view(request, section_id):
+    section = get_object_or_404(ProVendorSection, id=section_id)
+    items = section.items.select_related('vendor__user').prefetch_related(
+        'vendor__categories', 'vendor__subcategories', 'vendor__services'
+    ).order_by('sort_order')
+
+    available_vendors = Vendor.objects.pro().exclude(
+        id__in=items.values_list('vendor_id', flat=True)
+    ).select_related('user').order_by('pro_sort_order', 'user__first_name')
+
+    context = {
+        'admin_user': request.admin_user,
+        'active_page': 'pro_vendor_sections',
+        'section': section,
+        'items': items,
+        'available_vendors': available_vendors,
+    }
+    return render(request, 'dashboard/pro_vendor_section_detail.html', context)
+
+
+@admin_login_required
+def pro_vendor_section_add_item_view(request, section_id):
+    if request.method != 'POST':
+        return redirect('pro_vendor_section_detail', section_id=section_id)
+
+    section = get_object_or_404(ProVendorSection, id=section_id)
+    vendor_id = request.POST.get('vendor_id')
+
+    if not vendor_id:
+        messages.error(request, 'Please select a pro vendor.')
+        return redirect('pro_vendor_section_detail', section_id=section_id)
+
+    vendor = Vendor.objects.pro().filter(id=vendor_id).select_related('user').first()
+    if vendor is None:
+        messages.error(request, 'That vendor is not a verified Pro Vendor.')
+    else:
+        _, created = ProVendorSectionItem.objects.get_or_create(
+            section=section, vendor=vendor,
+            defaults={'sort_order': section.items.count()},
+        )
+        if created:
+            messages.success(request, f'"{vendor.display_name}" added.')
+        else:
+            messages.error(request, f'"{vendor.display_name}" is already in this section.')
+
+    return redirect('pro_vendor_section_detail', section_id=section_id)
+
+
+@admin_login_required
+def pro_vendor_section_remove_item_view(request, item_id):
+    if request.method != 'POST':
+        return redirect('pro_vendor_sections_list')
+
+    item = get_object_or_404(ProVendorSectionItem, id=item_id)
+    section_id = item.section_id
+    item.delete()
+    messages.success(request, 'Vendor removed from section.')
+    return redirect('pro_vendor_section_detail', section_id=section_id)
+
+
+@admin_login_required
+def pro_vendor_section_reorder_view(request, item_id):
+    if request.method != 'POST':
+        return redirect('pro_vendor_sections_list')
+
+    item = get_object_or_404(ProVendorSectionItem, id=item_id)
+    direction = request.POST.get('direction')
+    siblings = ProVendorSectionItem.objects.filter(section_id=item.section_id)
+
+    if direction == 'up':
+        swap_with = siblings.filter(
+            sort_order__lt=item.sort_order
+        ).order_by('-sort_order').first()
+    elif direction == 'down':
+        swap_with = siblings.filter(
+            sort_order__gt=item.sort_order
+        ).order_by('sort_order').first()
+    else:
+        swap_with = None
+
+    if swap_with:
+        item.sort_order, swap_with.sort_order = swap_with.sort_order, item.sort_order
+        item.save(update_fields=['sort_order'])
+        swap_with.save(update_fields=['sort_order'])
+
+    return redirect('pro_vendor_section_detail', section_id=item.section_id)

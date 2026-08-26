@@ -1,0 +1,155 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}{{ section.title }}{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto">
+    <div class="flex items-center gap-3 mb-6">
+        <a href="{% url 'pro_vendor_sections_list' %}" class="text-gray-500 hover:text-gray-700">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+        </a>
+        <div class="flex-1">
+            <div class="text-xs text-gray-500 mb-1">
+                <a href="{% url 'pro_vendor_sections_list' %}" class="hover:text-primary-600">Pro Vendor Sections</a>
+                <span class="mx-1">/</span>
+                <span>{{ section.title }}</span>
+            </div>
+            <h1 class="text-2xl font-bold text-gray-900">{{ section.title }}</h1>
+            {% if section.subtitle %}<p class="text-sm text-gray-500">{{ section.subtitle }}</p>{% endif %}
+        </div>
+        <a href="{% url 'pro_vendor_section_edit' section.id %}"
+           class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 px-4 rounded-lg font-semibold">
+            Edit Section
+        </a>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <!-- Add vendor -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
+        <h2 class="text-base font-semibold text-gray-900 mb-3">Add Pro Vendor to Section</h2>
+        <form method="post" action="{% url 'pro_vendor_section_add_item' section.id %}" class="flex gap-2">
+            {% csrf_token %}
+            <select name="vendor_id" required
+                    class="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm">
+                <option value="">-- Select a pro vendor to add --</option>
+                {% for vendor in available_vendors %}
+                    <option value="{{ vendor.id }}">
+                        {{ vendor.display_name }}{% if vendor.pro_title %} — {{ vendor.pro_title }}{% endif %}
+                    </option>
+                {% empty %}
+                    <option value="" disabled>No verified pro vendors left to add</option>
+                {% endfor %}
+            </select>
+            <button type="submit"
+                    class="bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold px-6 py-2 rounded-lg">
+                Add
+            </button>
+        </form>
+        <p class="text-xs text-gray-500 mt-2">
+            Only verified vendors flagged as Pro can be added.
+            <a href="{% url 'pro_vendors_list' %}" class="text-primary-600 hover:underline">Manage pro vendors</a>
+        </p>
+    </div>
+
+    <!-- Current items -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="p-5 border-b border-gray-100">
+            <h2 class="text-base font-semibold text-gray-900">Vendors in Section</h2>
+            <p class="text-xs text-gray-500 mt-1">
+                Total: {{ items.count }} · Shown on home: {{ section.home_display_limit }}
+            </p>
+        </div>
+
+        {% if items %}
+        <div class="divide-y divide-gray-100">
+            {% for item in items %}
+            <div class="flex items-center p-4 gap-4 {% if forloop.counter <= section.home_display_limit %}bg-primary-50/30{% endif %}">
+                <div class="text-xs font-bold text-gray-400 w-8">
+                    {% if forloop.counter <= section.home_display_limit %}
+                        <span class="bg-primary-600 text-white px-2 py-0.5 rounded-full">{{ forloop.counter }}</span>
+                    {% else %}
+                        {{ forloop.counter }}
+                    {% endif %}
+                </div>
+
+                {% if item.vendor.pro_photo %}
+                    <img src="{{ item.vendor.pro_photo.url }}" alt="" class="w-14 h-14 rounded-lg object-cover">
+                {% else %}
+                    <div class="w-14 h-14 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400 font-bold">
+                        {{ item.vendor.display_name|first|upper }}
+                    </div>
+                {% endif %}
+
+                <div class="flex-1 min-w-0">
+                    <div class="font-semibold text-gray-900 truncate">
+                        {{ item.vendor.display_name }}
+                        {% if not item.vendor.is_pro or item.vendor.verification_status != 'VERIFIED' %}
+                            <span class="ml-1 bg-amber-100 text-amber-700 text-xs font-semibold px-2 py-0.5 rounded-full">
+                                hidden in app
+                            </span>
+                        {% endif %}
+                    </div>
+                    <div class="text-xs text-gray-500 mt-0.5">
+                        {{ item.vendor.pro_title|default:"No headline" }}
+                        · {% for label in item.vendor.coverage_labels %}{{ label }}{% if not forloop.last %}, {% endif %}{% empty %}Nothing assigned{% endfor %}
+                    </div>
+                </div>
+
+                <!-- Reorder -->
+                <div class="flex flex-col gap-1">
+                    {% if not forloop.first %}
+                    <form method="post" action="{% url 'pro_vendor_section_reorder' item.id %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="direction" value="up">
+                        <button type="submit" class="p-1 text-gray-400 hover:text-gray-700" title="Move up">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                            </svg>
+                        </button>
+                    </form>
+                    {% endif %}
+                    {% if not forloop.last %}
+                    <form method="post" action="{% url 'pro_vendor_section_reorder' item.id %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="direction" value="down">
+                        <button type="submit" class="p-1 text-gray-400 hover:text-gray-700" title="Move down">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+
+                <form method="post" action="{% url 'pro_vendor_section_remove_item' item.id %}"
+                      onsubmit="return confirm('Remove this vendor from section?')">
+                    {% csrf_token %}
+                    <button type="submit"
+                            class="text-xs font-semibold bg-red-50 hover:bg-red-100 text-red-600 py-2 px-3 rounded-lg">
+                        Remove
+                    </button>
+                </form>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="p-12 text-center text-gray-500">
+            No vendors in this section yet. Add some using the dropdown above.
+        </div>
+        {% endif %}
+    </div>
+
+    <p class="text-xs text-gray-500 mt-3">
+        🔵 Highlighted vendors show on the home page. The rest appear in the "See all" screen.
+    </p>
+</div>
+{% endblock %}
