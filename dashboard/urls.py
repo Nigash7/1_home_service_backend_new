@@ -16,6 +16,14 @@ urlpatterns = [
     path('bookings/<int:booking_id>/reschedule/', views.reschedule_booking_view, name='reschedule_booking'),
     path('bookings/<int:booking_id>/update-payment/', views.update_payment_view, name='update_payment'),
 
+    # Tenders (customer-posted requirements vendors bid on)
+    path('tenders/', views.tenders_list_view, name='tenders_list'),
+    path('tenders/<int:tender_id>/', views.tender_detail_view, name='tender_detail'),
+    path('tenders/<int:tender_id>/approve/', views.tender_approve_view, name='tender_approve'),
+    path('tenders/<int:tender_id>/reject/', views.tender_reject_view, name='tender_reject'),
+    path('tenders/<int:tender_id>/award/', views.tender_award_view, name='tender_award'),
+    path('tenders/<int:tender_id>/cancel/', views.tender_cancel_view, name='tender_cancel'),
+
     # Vendors
     path('vendors/', views.vendors_list_view, name='vendors_list'),
     path('vendors/add/', views.vendor_add_view, name='vendor_add'),

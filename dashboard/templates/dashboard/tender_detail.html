@@ -1,0 +1,400 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}{{ tender.code }}{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+    <!-- Header -->
+    <div class="flex items-center gap-3 mb-6">
+        <a href="{% url 'tenders_list' %}" class="text-gray-500 hover:text-gray-700">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+        </a>
+        <div class="flex-1">
+            <h1 class="text-2xl font-bold text-gray-900">{{ tender.title }}</h1>
+            <p class="text-sm text-gray-500">{{ tender.code }} · posted {{ tender.created_at|date:"M d, Y H:i" }}</p>
+        </div>
+        <span class="text-sm font-semibold px-3 py-1 rounded-full
+            {% if tender.status == 'DRAFT' %}bg-gray-100 text-gray-700
+            {% elif tender.status == 'PENDING_APPROVAL' %}bg-orange-100 text-orange-700
+            {% elif tender.status == 'OPEN' %}bg-blue-100 text-blue-700
+            {% elif tender.status == 'AWARDED' %}bg-indigo-100 text-indigo-700
+            {% elif tender.status == 'IN_PROGRESS' %}bg-purple-100 text-purple-700
+            {% elif tender.status == 'COMPLETED' %}bg-green-100 text-green-700
+            {% else %}bg-red-100 text-red-700{% endif %}">
+            {{ tender.get_status_display }}
+        </span>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <!-- Approval gate -->
+    {% if tender.status == 'PENDING_APPROVAL' %}
+    <div class="bg-white rounded-2xl p-6 shadow-sm border-2 border-orange-200 mb-6">
+        <div class="flex items-start gap-3 mb-4">
+            <svg class="w-6 h-6 text-orange-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5 19h14a2 2 0 001.84-2.75L13.74 4a2 2 0 00-3.48 0l-7.1 12.25A2 2 0 004.99 19z"/>
+            </svg>
+            <div>
+                <h2 class="text-base font-semibold text-gray-900">Waiting for approval</h2>
+                <p class="text-sm text-gray-500 mt-1">
+                    No vendor can see this yet. Publishing notifies
+                    <strong>{{ matching_count }}</strong> verified vendor{{ matching_count|pluralize }} who cover
+                    {% if tender.subcategory %}{{ tender.subcategory.name }}{% else %}{{ tender.category.name }}{% endif %}.
+                </p>
+            </div>
+        </div>
+
+        {% if matching_vendors %}
+        <div class="mb-4 flex flex-wrap gap-2">
+            {% for vendor in matching_vendors %}
+            <span class="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-full">{{ vendor.display_name }}</span>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="mb-4 px-4 py-3 bg-red-50 text-red-700 text-sm rounded-lg">
+            No verified vendor currently covers this category. You can still publish, but nobody will be notified until a vendor is given this coverage.
+        </div>
+        {% endif %}
+
+        <div class="flex flex-wrap gap-3">
+            <form method="post" action="{% url 'tender_approve' tender.id %}">
+                {% csrf_token %}
+                <button type="submit" class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-2 px-5 rounded-lg">
+                    Publish to vendors
+                </button>
+            </form>
+            <button onclick="document.getElementById('reject-form').classList.toggle('hidden')"
+                    class="border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-semibold py-2 px-5 rounded-lg">
+                Send back
+            </button>
+        </div>
+
+        <form method="post" action="{% url 'tender_reject' tender.id %}" id="reject-form" class="hidden mt-4">
+            {% csrf_token %}
+            <label class="block text-sm text-gray-600 mb-1">Why is it being sent back? The customer sees this.</label>
+            <textarea name="reason" rows="2" required
+                      class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                      placeholder="e.g. The budget looks like a typo — please confirm the amount."></textarea>
+            <button type="submit" class="mt-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2 px-5 rounded-lg">
+                Send back to customer
+            </button>
+        </form>
+    </div>
+    {% endif %}
+
+    {% if tender.status == 'REJECTED' and tender.rejection_reason %}
+    <div class="mb-6 px-4 py-3 bg-red-50 border border-red-200 rounded-2xl text-sm text-red-700">
+        <strong>Sent back:</strong> {{ tender.rejection_reason }}
+    </div>
+    {% endif %}
+    {% if tender.status == 'CANCELLED' %}
+    <div class="mb-6 px-4 py-3 bg-red-50 border border-red-200 rounded-2xl text-sm text-red-700">
+        <strong>Cancelled.</strong> {{ tender.cancellation_reason }}
+    </div>
+    {% endif %}
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Left column -->
+        <div class="lg:col-span-2 space-y-6">
+            <!-- The brief -->
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                <h2 class="text-base font-semibold text-gray-900 mb-4">The project</h2>
+                <div class="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <div class="text-gray-500">Type</div>
+                        <div class="text-gray-900 font-medium">{{ tender.get_project_type_display }}</div>
+                    </div>
+                    <div>
+                        <div class="text-gray-500">Category</div>
+                        <div class="text-gray-900 font-medium">
+                            {{ tender.category.name }}{% if tender.subcategory %} → {{ tender.subcategory.name }}{% endif %}
+                        </div>
+                    </div>
+                    {% if tender.area_sqft %}
+                    <div>
+                        <div class="text-gray-500">Area</div>
+                        <div class="text-gray-900 font-medium">{{ tender.area_sqft }} sq ft</div>
+                    </div>
+                    {% endif %}
+                    <div>
+                        <div class="text-gray-500">Expected budget</div>
+                        <div class="text-gray-900 font-semibold">₹{{ tender.expected_budget|floatformat:0 }}</div>
+                    </div>
+                    <div class="col-span-2">
+                        <div class="text-gray-500">Description</div>
+                        <div class="text-gray-900 whitespace-pre-line">{{ tender.description }}</div>
+                    </div>
+                    {% if tender.requirements %}
+                    <div class="col-span-2">
+                        <div class="text-gray-500">Requirements</div>
+                        <div class="text-gray-900 whitespace-pre-line">{{ tender.requirements }}</div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Attachments -->
+            {% if tender.attachments.all %}
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                <h2 class="text-base font-semibold text-gray-900 mb-4">Drawings &amp; photos</h2>
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {% for attachment in tender.attachments.all %}
+                    <a href="{{ attachment.file.url }}" target="_blank" class="block group">
+                        {% if attachment.is_image %}
+                        <img src="{{ attachment.file.url }}" alt="{{ attachment.caption }}"
+                             class="w-full h-28 object-cover rounded-lg border border-gray-200 group-hover:opacity-90">
+                        {% else %}
+                        <div class="w-full h-28 flex items-center justify-center bg-gray-50 rounded-lg border border-gray-200 text-xs text-gray-500 px-2 text-center">
+                            {{ attachment.filename|truncatechars:28 }}
+                        </div>
+                        {% endif %}
+                        {% if attachment.caption %}
+                        <div class="text-xs text-gray-500 mt-1 truncate">{{ attachment.caption }}</div>
+                        {% endif %}
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Bids -->
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-base font-semibold text-gray-900">Bids</h2>
+                    <span class="text-sm text-gray-500">{{ bids|length }} received</span>
+                </div>
+
+                {% if bids %}
+                <div class="space-y-3">
+                    {% for bid in bids %}
+                    <div class="border rounded-xl p-4 {% if bid.status == 'ACCEPTED' %}border-green-300 bg-green-50{% else %}border-gray-200{% endif %}">
+                        <div class="flex items-start justify-between gap-4">
+                            <div class="min-w-0">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="font-semibold text-gray-900">{{ bid.vendor.display_name }}</span>
+                                    {% if bid.vendor.is_pro %}<span class="text-xs bg-primary-100 text-primary-700 px-2 py-0.5 rounded-full">Pro</span>{% endif %}
+                                    <span class="text-xs font-semibold px-2 py-0.5 rounded-full
+                                        {% if bid.status == 'ACCEPTED' %}bg-green-100 text-green-700
+                                        {% elif bid.status == 'REJECTED' %}bg-gray-100 text-gray-500
+                                        {% else %}bg-blue-100 text-blue-700{% endif %}">
+                                        {{ bid.get_status_display }}
+                                    </span>
+                                </div>
+                                <div class="text-xs text-gray-500 mt-1">
+                                    ★ {{ bid.vendor.average_rating }} ({{ bid.vendor.total_reviews }} review{{ bid.vendor.total_reviews|pluralize }})
+                                    · {{ bid.vendor.experience_years }} yr experience
+                                    {% if bid.timeline_days %} · {{ bid.timeline_days }} days{% endif %}
+                                </div>
+                            </div>
+                            <div class="text-right flex-shrink-0">
+                                <div class="text-lg font-bold text-gray-900">₹{{ bid.amount|floatformat:0 }}</div>
+                                <div class="text-xs {% if bid.difference_from_expected > 0 %}text-red-600{% else %}text-green-600{% endif %}">
+                                    {% if bid.difference_from_expected > 0 %}+{% endif %}₹{{ bid.difference_from_expected|floatformat:0 }} vs budget
+                                </div>
+                            </div>
+                        </div>
+
+                        {% if bid.work_plan %}
+                        <div class="mt-3 text-sm text-gray-700 whitespace-pre-line">{{ bid.work_plan }}</div>
+                        {% endif %}
+                        {% if bid.notes %}
+                        <div class="mt-2 text-xs text-gray-500 whitespace-pre-line">{{ bid.notes }}</div>
+                        {% endif %}
+
+                        {% if bid.milestones.all %}
+                        <div class="mt-3 pt-3 border-t border-gray-200">
+                            <div class="text-xs text-gray-500 mb-2">Proposed milestones</div>
+                            <div class="space-y-1">
+                                {% for milestone in bid.milestones.all %}
+                                <div class="flex items-center justify-between text-sm">
+                                    <span class="text-gray-700">{{ milestone.title }}</span>
+                                    <span class="text-gray-900 font-medium">₹{{ milestone.amount|floatformat:0 }}</span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% if bid.milestone_total != bid.amount %}
+                            <div class="mt-2 text-xs text-orange-600">
+                                Milestones total ₹{{ bid.milestone_total|floatformat:0 }}, which does not match the bid of ₹{{ bid.amount|floatformat:0 }}.
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+
+                        {% if tender.status == 'OPEN' and bid.status == 'SUBMITTED' %}
+                        <form method="post" action="{% url 'tender_award' tender.id %}" class="mt-3"
+                              onsubmit="return confirm('Award this tender to {{ bid.vendor.display_name|escapejs }}? Every other bid will be turned down.');">
+                            {% csrf_token %}
+                            <input type="hidden" name="bid_id" value="{{ bid.id }}">
+                            <button type="submit" class="text-sm font-semibold text-primary-600 hover:text-primary-700">
+                                Award to this vendor →
+                            </button>
+                        </form>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-sm text-gray-500 py-6 text-center">
+                    {% if tender.status == 'OPEN' %}No bids yet.{% else %}This tender has not gone out to vendors.{% endif %}
+                </p>
+                {% endif %}
+            </div>
+
+            <!-- Progress -->
+            {% if tender.progress_updates.all %}
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                <h2 class="text-base font-semibold text-gray-900 mb-4">Progress</h2>
+                <div class="space-y-4">
+                    {% for update in tender.progress_updates.all %}
+                    <div class="border-l-2 border-primary-200 pl-4">
+                        <div class="flex items-center gap-2 text-xs text-gray-500">
+                            <span class="font-medium text-gray-700">{{ update.vendor.display_name }}</span>
+                            <span>{{ update.created_at|date:"M d, Y H:i" }}</span>
+                            {% if update.percent_complete is not None %}
+                            <span class="bg-primary-100 text-primary-700 px-2 py-0.5 rounded-full">{{ update.percent_complete }}%</span>
+                            {% endif %}
+                        </div>
+                        <div class="text-sm text-gray-800 mt-1 whitespace-pre-line">{{ update.message }}</div>
+                        {% if update.photos.all %}
+                        <div class="flex flex-wrap gap-2 mt-2">
+                            {% for photo in update.photos.all %}
+                            <a href="{{ photo.image.url }}" target="_blank">
+                                <img src="{{ photo.image.url }}" alt="" class="w-20 h-20 object-cover rounded-lg border border-gray-200">
+                            </a>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Right column -->
+        <div class="space-y-6">
+            <!-- Customer -->
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                <h2 class="text-base font-semibold text-gray-900 mb-4">Customer</h2>
+                <div class="text-sm space-y-3">
+                    <div>
+                        <div class="text-gray-500">Name</div>
+                        <div class="text-gray-900 font-medium">{{ tender.customer.user.get_full_name|default:tender.customer.user.username }}</div>
+                    </div>
+                    <div>
+                        <div class="text-gray-500">Phone</div>
+                        <div class="text-gray-900 font-medium">{{ tender.contact_phone|default:tender.customer.user.phone_number|default:"—" }}</div>
+                    </div>
+                    <div>
+                        <div class="text-gray-500">Site</div>
+                        <div class="text-gray-900">{{ tender.address_text|default:"—" }}</div>
+                        {% if tender.location_label %}
+                        <div class="text-gray-600 text-xs mt-1">{{ tender.location_label }}</div>
+                        {% endif %}
+                        {% if tender.location_lat and tender.location_lng %}
+                        <a href="https://www.google.com/maps?q={{ tender.location_lat }},{{ tender.location_lng }}" target="_blank"
+                           class="text-xs text-primary-600 hover:text-primary-700">Open in Maps →</a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Awarded vendor -->
+            {% if tender.awarded_bid %}
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                <h2 class="text-base font-semibold text-gray-900 mb-4">Awarded to</h2>
+                <div class="text-sm space-y-3">
+                    <div>
+                        <div class="text-gray-500">Vendor</div>
+                        <div class="text-gray-900 font-medium">{{ tender.awarded_vendor.display_name }}</div>
+                        <a href="{% url 'vendor_detail' tender.awarded_vendor.id %}" class="text-xs text-primary-600 hover:text-primary-700">View profile →</a>
+                    </div>
+                    <div>
+                        <div class="text-gray-500">Agreed amount</div>
+                        <div class="text-gray-900 font-semibold">₹{{ tender.final_amount|floatformat:0 }}</div>
+                    </div>
+                    <div>
+                        <div class="text-gray-500">Payment</div>
+                        <div class="text-gray-900 font-medium">{{ tender.get_payment_status_display }}</div>
+                    </div>
+                </div>
+
+                {% if tender.milestones %}
+                <div class="mt-4 pt-4 border-t border-gray-100">
+                    <div class="text-xs text-gray-500 mb-2">Milestones</div>
+                    <div class="space-y-2">
+                        {% for milestone in tender.milestones %}
+                        <div class="flex items-center justify-between gap-2 text-sm">
+                            <div class="min-w-0">
+                                <div class="text-gray-800 truncate">{{ milestone.title }}</div>
+                                <span class="text-xs font-semibold px-1.5 py-0.5 rounded-full
+                                    {% if milestone.status == 'PAID' %}bg-green-100 text-green-700
+                                    {% elif milestone.status == 'REACHED' %}bg-orange-100 text-orange-700
+                                    {% else %}bg-gray-100 text-gray-600{% endif %}">
+                                    {{ milestone.get_status_display }}
+                                </span>
+                            </div>
+                            <span class="text-gray-900 font-medium flex-shrink-0">₹{{ milestone.amount|floatformat:0 }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <!-- Timeline -->
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                <h2 class="text-base font-semibold text-gray-900 mb-4">Timeline</h2>
+                <div class="text-sm space-y-2">
+                    <div class="flex justify-between"><span class="text-gray-500">Posted</span><span class="text-gray-900">{{ tender.created_at|date:"M d, Y" }}</span></div>
+                    {% if tender.submitted_at %}<div class="flex justify-between"><span class="text-gray-500">Sent for review</span><span class="text-gray-900">{{ tender.submitted_at|date:"M d, Y" }}</span></div>{% endif %}
+                    {% if tender.published_at %}<div class="flex justify-between"><span class="text-gray-500">Published</span><span class="text-gray-900">{{ tender.published_at|date:"M d, Y" }}</span></div>{% endif %}
+                    {% if tender.bid_deadline %}<div class="flex justify-between"><span class="text-gray-500">Bidding closes</span><span class="text-gray-900">{{ tender.bid_deadline|date:"M d, Y" }}</span></div>{% endif %}
+                    {% if tender.preferred_start_date %}<div class="flex justify-between"><span class="text-gray-500">Wanted start</span><span class="text-gray-900">{{ tender.preferred_start_date|date:"M d, Y" }}</span></div>{% endif %}
+                    {% if tender.duration_days %}<div class="flex justify-between"><span class="text-gray-500">Expected duration</span><span class="text-gray-900">{{ tender.duration_days }} days</span></div>{% endif %}
+                    {% if tender.awarded_at %}<div class="flex justify-between"><span class="text-gray-500">Awarded</span><span class="text-gray-900">{{ tender.awarded_at|date:"M d, Y" }}</span></div>{% endif %}
+                    {% if tender.started_at %}<div class="flex justify-between"><span class="text-gray-500">Started</span><span class="text-gray-900">{{ tender.started_at|date:"M d, Y" }}</span></div>{% endif %}
+                    {% if tender.completed_at %}<div class="flex justify-between"><span class="text-gray-500">Completed</span><span class="text-gray-900">{{ tender.completed_at|date:"M d, Y" }}</span></div>{% endif %}
+                </div>
+            </div>
+
+            <!-- Review -->
+            {% if review %}
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                <h2 class="text-base font-semibold text-gray-900 mb-2">Customer review</h2>
+                <div class="text-lg text-yellow-500">
+                    {% for i in "12345" %}{% if forloop.counter <= review.rating %}★{% else %}<span class="text-gray-300">★</span>{% endif %}{% endfor %}
+                </div>
+                {% if review.comment %}<p class="text-sm text-gray-700 mt-2">{{ review.comment }}</p>{% endif %}
+                <p class="text-xs text-gray-400 mt-2">{{ review.created_at|date:"M d, Y" }}</p>
+            </div>
+            {% endif %}
+
+            <!-- Cancel -->
+            {% if tender.status != 'COMPLETED' and tender.status != 'CANCELLED' %}
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                <h2 class="text-base font-semibold text-gray-900 mb-3">Close this tender</h2>
+                <form method="post" action="{% url 'tender_cancel' tender.id %}"
+                      onsubmit="return confirm('Cancel this tender? Every vendor with a live bid will be told.');">
+                    {% csrf_token %}
+                    <input type="text" name="reason" placeholder="Reason (optional)"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-2 focus:ring-2 focus:ring-primary-500 outline-none">
+                    <button type="submit" class="w-full bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2 px-4 rounded-lg">
+                        Cancel tender
+                    </button>
+                </form>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

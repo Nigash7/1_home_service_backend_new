@@ -307,3 +307,129 @@ ADMIN_SYSTEM = _e(
     "admin.system", ADMIN, CAT_SYSTEM,
     "{title}", "{body}",
 )
+
+# =================================================================== TENDERS
+# Bidding flow: the customer posts a requirement, an admin approves it,
+# matching vendors quote, the customer picks one, then the work runs.
+# Placeholders: {tender_code} {tender_id} {tender_title} {category_name}
+#               {budget} {amount} {bid_count} {vendor_name} {customer_name}
+#               {reason} {milestone_title} {percent}
+
+TENDER_SUBMITTED = _e(
+    "tender.submitted", CUSTOMER, CAT_BOOKING,
+    "Tender sent for review",
+    "{tender_code} is with our team. We will let you know as soon as it goes out to vendors.",
+    route="/tenders/{tender_id}",
+)
+TENDER_APPROVED = _e(
+    "tender.approved", CUSTOMER, CAT_BOOKING,
+    "Your tender is live",
+    "{tender_title} is now open and {vendor_count} vendors can see it. Bids will start arriving soon.",
+    route="/tenders/{tender_id}",
+)
+TENDER_REJECTED = _e(
+    "tender.rejected", CUSTOMER, CAT_BOOKING,
+    "Tender needs changes",
+    "{tender_code} was not published. {reason}",
+    route="/tenders/{tender_id}",
+)
+TENDER_BID_RECEIVED = _e(
+    "tender.bid_received", CUSTOMER, CAT_BOOKING,
+    "New bid on {tender_title}",
+    "{vendor_name} quoted {amount}. You now have {bid_count} bid(s) to compare.",
+    route="/tenders/{tender_id}/bids",
+)
+TENDER_AWARDED = _e(
+    "tender.awarded", CUSTOMER, CAT_BOOKING,
+    "Deal confirmed",
+    "{vendor_name} will take on {tender_title} for {amount}. Reach them on {vendor_phone}.",
+    route="/tenders/{tender_id}",
+)
+TENDER_WORK_STARTED = _e(
+    "tender.work_started", CUSTOMER, CAT_BOOKING,
+    "Work has started",
+    "{vendor_name} has started work on {tender_title}.",
+    route="/tenders/{tender_id}",
+)
+TENDER_PROGRESS_UPDATE = _e(
+    "tender.progress_update", CUSTOMER, CAT_BOOKING,
+    "Progress update",
+    "{vendor_name} posted an update on {tender_title}. {percent}",
+    route="/tenders/{tender_id}",
+)
+TENDER_MILESTONE_REACHED = _e(
+    "tender.milestone_reached", CUSTOMER, CAT_PAYMENT,
+    "Milestone reached",
+    "{vendor_name} marked \"{milestone_title}\" complete on {tender_title}. {amount} is due.",
+    route="/tenders/{tender_id}",
+)
+TENDER_COMPLETED = _e(
+    "tender.completed", CUSTOMER, CAT_BOOKING,
+    "Project completed",
+    "{vendor_name} has finished {tender_title}. Tell us how it went.",
+    route="/tenders/{tender_id}",
+)
+
+# ---------------------------------------------------------------- vendor app
+TENDER_NEW_MATCH = _e(
+    "tender.new_match", VENDOR, CAT_BOOKING,
+    "New tender: {tender_title}",
+    "A {category_name} project in {location} with a budget of {budget}. Submit your bid.",
+    route="/tenders/{tender_id}",
+)
+TENDER_BID_ACCEPTED = _e(
+    "tender.bid_accepted", VENDOR, CAT_BOOKING,
+    "You won {tender_title}",
+    "{customer_name} accepted your bid of {amount}. Reach them on {customer_phone}.",
+    route="/tenders/{tender_id}",
+)
+TENDER_BID_REJECTED = _e(
+    "tender.bid_rejected", VENDOR, CAT_BOOKING,
+    "Bid not selected",
+    "Your bid on {tender_title} was not chosen this time.",
+    route="/tenders/{tender_id}",
+)
+TENDER_CLOSED_TO_VENDOR = _e(
+    "tender.closed_vendor", VENDOR, CAT_BOOKING,
+    "Tender withdrawn",
+    "{tender_title} is no longer accepting bids. {reason}",
+    route="/tenders/{tender_id}",
+)
+TENDER_MILESTONE_PAID = _e(
+    "tender.milestone_paid", VENDOR, CAT_PAYMENT,
+    "Payment released",
+    "{customer_name} released {amount} for \"{milestone_title}\" on {tender_title}.",
+    route="/tenders/{tender_id}",
+)
+TENDER_DEADLINE_SOON = _e(
+    "tender.deadline_soon", VENDOR, CAT_BOOKING,
+    "Bidding closes tomorrow",
+    "{tender_title} stops accepting bids on {bid_deadline}.",
+    route="/tenders/{tender_id}",
+)
+
+# --------------------------------------------------------------------- admin
+ADMIN_TENDER_SUBMITTED = _e(
+    "admin.tender_submitted", ADMIN, CAT_BOOKING,
+    "Tender awaiting approval",
+    "{customer_name} posted \"{tender_title}\" ({category_name}, {budget}).",
+    route="/tenders/{tender_id}/",
+)
+ADMIN_TENDER_AWARDED = _e(
+    "admin.tender_awarded", ADMIN, CAT_BOOKING,
+    "Tender awarded",
+    "{tender_code} went to {vendor_name} for {amount}.",
+    route="/tenders/{tender_id}/",
+)
+ADMIN_TENDER_COMPLETED = _e(
+    "admin.tender_completed", ADMIN, CAT_BOOKING,
+    "Tender completed",
+    "{vendor_name} finished {tender_code}.",
+    route="/tenders/{tender_id}/",
+)
+ADMIN_TENDER_CANCELLED = _e(
+    "admin.tender_cancelled", ADMIN, CAT_BOOKING,
+    "Tender cancelled",
+    "{tender_code} was cancelled. {reason}",
+    route="/tenders/{tender_id}/",
+)

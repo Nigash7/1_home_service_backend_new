@@ -1,0 +1,145 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}Tenders{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <div class="mb-6">
+        <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">Tenders</h1>
+        <p class="text-gray-500 mt-1">Customer-posted projects that vendors bid on.</p>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    {% if tenders_pending_count %}
+    <a href="?status=PENDING_APPROVAL"
+       class="flex items-center gap-3 mb-6 px-4 py-3 bg-orange-50 border border-orange-200 rounded-2xl text-sm text-orange-800 hover:bg-orange-100 transition">
+        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5 19h14a2 2 0 001.84-2.75L13.74 4a2 2 0 00-3.48 0l-7.1 12.25A2 2 0 004.99 19z"/>
+        </svg>
+        <span><strong>{{ tenders_pending_count }}</strong> tender{{ tenders_pending_count|pluralize }} waiting for approval — no vendor can see them until you publish.</span>
+    </a>
+    {% endif %}
+
+    <!-- Filters -->
+    <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 mb-6">
+        <form method="get" class="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <input type="text" name="search" value="{{ search }}" placeholder="Search ID, title, customer, pincode..."
+                   class="px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+
+            <select name="status" class="px-4 py-2 border border-gray-300 rounded-lg text-sm">
+                <option value="">All Statuses</option>
+                {% for value, label in status_choices %}
+                    <option value="{{ value }}" {% if current_status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+
+            <select name="category" class="px-4 py-2 border border-gray-300 rounded-lg text-sm">
+                <option value="">All Categories</option>
+                {% for cat in categories %}
+                    <option value="{{ cat.id }}" {% if current_category|stringformat:"i" == cat.id|stringformat:"i" %}selected{% endif %}>{{ cat.name }}</option>
+                {% endfor %}
+            </select>
+
+            <button type="submit" class="bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2 px-4 rounded-lg">
+                Filter
+            </button>
+        </form>
+    </div>
+
+    <!-- Tenders table -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead>
+                    <tr class="bg-gray-50 text-left">
+                        <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Tender</th>
+                        <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Customer</th>
+                        <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Category</th>
+                        <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Budget</th>
+                        <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Bids</th>
+                        <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
+                        <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Posted</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for tender in page_obj %}
+                    <tr class="hover:bg-gray-50 cursor-pointer" onclick="window.location='{% url 'tender_detail' tender.id %}'">
+                        <td class="px-4 py-3 text-sm">
+                            <div class="font-medium text-gray-900">{{ tender.title|truncatechars:42 }}</div>
+                            <div class="text-xs text-gray-400">{{ tender.code }} · {{ tender.get_project_type_display }}</div>
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-700">
+                            {{ tender.customer.user.get_full_name|default:tender.customer.user.username }}
+                            {% if tender.location_label %}<div class="text-xs text-gray-400">{{ tender.location_label }}</div>{% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-700">
+                            {{ tender.category.name }}
+                            {% if tender.subcategory %}<div class="text-xs text-gray-400">{{ tender.subcategory.name }}</div>{% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-900 font-semibold">
+                            ₹{{ tender.expected_budget|floatformat:0 }}
+                            {% if tender.awarded_bid %}
+                            <div class="text-xs font-normal text-green-600">won at ₹{{ tender.awarded_bid.amount|floatformat:0 }}</div>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-700">
+                            {% if tender.bid_total %}
+                                <span class="font-semibold text-gray-900">{{ tender.bid_total }}</span>
+                                <div class="text-xs text-gray-400">₹{{ tender.bid_low|floatformat:0 }}–{{ tender.bid_high|floatformat:0 }}</div>
+                            {% else %}
+                                <span class="text-gray-400">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3">
+                            <span class="text-xs font-semibold px-2 py-1 rounded-full
+                                {% if tender.status == 'DRAFT' %}bg-gray-100 text-gray-700
+                                {% elif tender.status == 'PENDING_APPROVAL' %}bg-orange-100 text-orange-700
+                                {% elif tender.status == 'OPEN' %}bg-blue-100 text-blue-700
+                                {% elif tender.status == 'AWARDED' %}bg-indigo-100 text-indigo-700
+                                {% elif tender.status == 'IN_PROGRESS' %}bg-purple-100 text-purple-700
+                                {% elif tender.status == 'COMPLETED' %}bg-green-100 text-green-700
+                                {% else %}bg-red-100 text-red-700{% endif %}">
+                                {{ tender.get_status_display }}
+                            </span>
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-500">
+                            {{ tender.created_at|date:"M d" }}
+                            {% if tender.bid_deadline %}<div class="text-xs text-gray-400">closes {{ tender.bid_deadline|date:"M d" }}</div>{% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7" class="px-4 py-12 text-center text-gray-500">No tenders found.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if page_obj.has_other_pages %}
+        <div class="px-4 py-3 border-t border-gray-100 flex items-center justify-between text-sm">
+            <div class="text-gray-500">
+                Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ page_obj.paginator.count }}
+            </div>
+            <div class="flex gap-2">
+                {% if page_obj.has_previous %}
+                    <a href="?page={{ page_obj.previous_page_number }}&status={{ current_status }}&category={{ current_category }}&search={{ search }}"
+                       class="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-50">Previous</a>
+                {% endif %}
+                <span class="px-3 py-1">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+                {% if page_obj.has_next %}
+                    <a href="?page={{ page_obj.next_page_number }}&status={{ current_status }}&category={{ current_category }}&search={{ search }}"
+                       class="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-50">Next</a>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
