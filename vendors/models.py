@@ -342,3 +342,12 @@ class VendorDocument(models.Model):
     @property
     def filename(self):
         return self.file.name.rsplit('/', 1)[-1]
+
+
+# Payout details live in their own module -- different rules, same app.
+# Imported here so `vendors.models.VendorBankAccount` resolves and Django
+# picks the models up without a second app registration.
+from .bank_models import (  # noqa: E402,F401
+    VendorBankAccount, VendorBankAccountChange, mask_account_number,
+    IFSC_RE, ACCOUNT_NUMBER_RE, UPI_RE,
+)

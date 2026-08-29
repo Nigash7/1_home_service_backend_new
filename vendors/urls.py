@@ -7,6 +7,9 @@ from .views import (
     ProVendorListView,
     ProVendorDetailView,
 )
+from .bank_views import (
+    VendorBankAccountView, VendorBankAccountHistoryView,
+)
 
 urlpatterns = [
     # Pro Vendors (public — read by the Customer app)
@@ -16,5 +19,9 @@ urlpatterns = [
     path('signup/', VendorSignupView.as_view(), name='vendor-signup'),
     path('me/', VendorMeView.as_view(), name='vendor-me'),
     path('me/availability/', VendorAvailabilityUpdateView.as_view(), name='vendor-availability'),
+
+    # Payout details -- always the caller's own, never addressed by id.
+    path('me/bank-account/', VendorBankAccountView.as_view(), name='vendor-bank-account'),
+    path('me/bank-account/history/', VendorBankAccountHistoryView.as_view(), name='vendor-bank-account-history'),
      path('update-location/', UpdateVendorLocationView.as_view(), name='vendor-update-location'),
 ]

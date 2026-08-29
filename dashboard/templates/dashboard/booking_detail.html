@@ -153,6 +153,11 @@
                         </span>
                     </div>
                 </div>
+                {% if has_gateway_payment %}
+                <div class="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                    Set by Razorpay. Use the controls below to refund or release.
+                </div>
+                {% else %}
                 <form method="post" action="{% url 'update_payment' booking.id %}" class="space-y-2">
                     {% csrf_token %}
                     <input type="number" name="amount" value="{{ booking.amount }}" step="0.01"
@@ -166,7 +171,182 @@
                         Update Payment
                     </button>
                 </form>
+                {% endif %}
             </div>
+
+            <!-- Gateway payments: the money we actually hold -->
+            {% if payments %}
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                <h2 class="text-base font-semibold text-gray-900 mb-4">Razorpay</h2>
+
+                {% for payment in payments %}
+                <div class="{% if not forloop.first %}mt-5 pt-5 border-t border-gray-100{% endif %}">
+                    <div class="flex items-baseline justify-between">
+                        <span class="text-lg font-bold text-gray-900">₹{{ payment.amount|floatformat:2 }}</span>
+                        <span class="text-xs font-semibold px-2 py-0.5 rounded-full
+                            {% if payment.status == 'CAPTURED' %}bg-green-100 text-green-700
+                            {% elif payment.status == 'FAILED' %}bg-red-100 text-red-700
+                            {% elif payment.status == 'REFUNDED' or payment.status == 'PARTIALLY_REFUNDED' %}bg-amber-100 text-amber-700
+                            {% else %}bg-gray-100 text-gray-600{% endif %}">
+                            {{ payment.get_status_display }}
+                        </span>
+                    </div>
+
+                    <div class="mt-1 text-xs text-gray-500 space-y-0.5">
+                        <div class="font-mono">{{ payment.razorpay_order_id }}</div>
+                        {% if payment.razorpay_payment_id %}
+                        <div class="font-mono">{{ payment.razorpay_payment_id }}</div>
+                        {% endif %}
+                        <div>
+                            {% if payment.method %}{{ payment.method|upper }} &middot; {% endif %}
+                            {{ payment.created_at|date:"j M Y, g:i a" }}
+                            {% if not payment.is_live %}
+                            <span class="ml-1 px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-800 font-semibold">TEST</span>
+                            {% endif %}
+                        </div>
+                        {% if payment.amount_refunded > 0 %}
+                        <div class="text-amber-700">Refunded &#8377;{{ payment.amount_refunded|floatformat:2 }}</div>
+                        {% endif %}
+                    </div>
+
+                    {% if payment.is_paid or payment.status == 'PARTIALLY_REFUNDED' %}
+                    <div class="mt-3 px-3 py-2 rounded-lg text-xs
+                        {% if payment.payout_status == 'HELD' %}bg-blue-50 text-blue-800 border border-blue-100
+                        {% elif payment.payout_status == 'RELEASED' %}bg-gray-50 text-gray-600 border border-gray-200
+                        {% else %}bg-amber-50 text-amber-800 border border-amber-100{% endif %}">
+                        {% if payment.payout_status == 'HELD' %}
+                            Held by the platform. Refundable up to &#8377;{{ payment.refundable_amount|floatformat:2 }}.
+                        {% elif payment.payout_status == 'RELEASED' %}
+                            Released to the vendor on {{ payment.released_at|date:"j M Y" }}. No longer refundable.
+                        {% else %}
+                            Returned to the customer.
+                        {% endif %}
+                    </div>
+                    {% endif %}
+
+                    <!-- The transfer itself, once one exists -->
+                    {% with payout=payment.payout %}
+                    {% if payout %}
+                    <div class="mt-3 px-3 py-2 rounded-lg text-xs border
+                        {% if payout.status == 'processed' %}bg-green-50 border-green-200 text-green-800
+                        {% elif payout.status == 'queued' or payout.status == 'processing' or payout.status == 'pending' %}bg-blue-50 border-blue-200 text-blue-800
+                        {% else %}bg-red-50 border-red-200 text-red-800{% endif %}">
+                        <div class="font-semibold">
+                            Transfer: {{ payout.get_status_display }}
+                            {% if payout.mode %}&middot; {{ payout.mode }}{% endif %}
+                        </div>
+                        {% if payout.utr %}
+                        <div class="mt-0.5 font-mono">UTR {{ payout.utr }}</div>
+                        {% endif %}
+                        {% if payout.status == 'queued' %}
+                        <div class="mt-0.5">
+                            Waiting on your RazorpayX balance. It goes out
+                            automatically once the account is topped up.
+                        </div>
+                        {% endif %}
+                        {% if payout.failure_reason %}
+                        <div class="mt-0.5">{{ payout.failure_reason }}</div>
+                        {% endif %}
+                        {% if payout.attempts > 1 %}
+                        <div class="mt-0.5 opacity-70">Attempt {{ payout.attempts }}</div>
+                        {% endif %}
+                    </div>
+
+                    {% if payout.can_retry and payouts_enabled %}
+                    <form method="post" action="{% url 'retry_payout' payment.id %}"
+                          onsubmit="return confirm('Send this transfer again? Only do this if the previous attempt definitely failed.')"
+                          class="mt-2">
+                        {% csrf_token %}
+                        <button type="submit"
+                                class="w-full bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold py-2 rounded-lg">
+                            Retry transfer
+                        </button>
+                    </form>
+                    {% endif %}
+                    {% endif %}
+                    {% endwith %}
+
+                    {% if payment.payout_status == 'HELD' and payment.refundable_amount > 0 %}
+                    <div class="mt-3 space-y-2">
+                        <!-- Where a release would actually send this money -->
+                        {% if payout_account %}
+                        <div class="px-3 py-2 rounded-lg text-xs border
+                            {% if payout_account.is_verified %}bg-gray-50 border-gray-200 text-gray-600
+                            {% else %}bg-amber-50 border-amber-200 text-amber-800{% endif %}">
+                            <div class="font-semibold">
+                                Pays to {{ payout_account.masked_account_number }}
+                                &middot; {{ payout_account.ifsc_code }}
+                            </div>
+                            <div class="mt-0.5">
+                                {{ payout_account.account_holder_name }}
+                                {% if not payout_account.is_verified %}
+                                &mdash; <span class="font-semibold">not yet verified</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% else %}
+                        <div class="px-3 py-2 rounded-lg text-xs bg-red-50 border border-red-200 text-red-800">
+                            <span class="font-semibold">No payout account on file.</span>
+                            This vendor has not added bank details, so there is
+                            nowhere to send the money.
+                        </div>
+                        {% endif %}
+
+                        <!-- Release: only once the work is done and there is
+                             somewhere to send it -->
+                        {% if booking.status == 'COMPLETED' and payout_account %}
+                        <form method="post" action="{% url 'release_payment' payment.id %}"
+                              onsubmit="return confirm('Release this payment to the vendor? It can no longer be refunded afterwards.')">
+                            {% csrf_token %}
+                            <button type="submit"
+                                    class="w-full bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-2 rounded-lg">
+                                Release to vendor
+                            </button>
+                        </form>
+                        {% else %}
+                        <button type="button" disabled
+                                class="w-full bg-gray-100 text-gray-400 text-sm font-semibold py-2 rounded-lg cursor-not-allowed">
+                            Release to vendor
+                        </button>
+                        <p class="text-xs text-gray-400 text-center">
+                            {% if not payout_account %}
+                            Available once the vendor adds payout details.
+                            {% else %}
+                            Available once the booking is completed.
+                            {% endif %}
+                        </p>
+                        {% endif %}
+
+                        <!-- Refund: folded away, so it is never the easy mis-click -->
+                        <details>
+                            <summary class="cursor-pointer list-none text-center text-sm font-semibold text-red-600 hover:text-red-700 py-1.5">
+                                Refund&hellip;
+                            </summary>
+                            <form method="post" action="{% url 'refund_payment' payment.id %}"
+                                  onsubmit="return confirm('Refund this payment to the customer?')"
+                                  class="mt-2 space-y-2">
+                                {% csrf_token %}
+                                <input type="number" name="amount" step="0.01" min="0.01"
+                                       max="{{ payment.refundable_amount }}"
+                                       placeholder="Full refund (&#8377;{{ payment.refundable_amount|floatformat:2 }})"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                                <input type="text" name="reason" placeholder="Reason (optional)"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                                <button type="submit"
+                                        class="w-full bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2 rounded-lg">
+                                    Refund
+                                </button>
+                                <p class="text-xs text-gray-400">
+                                    Leave the amount blank to refund everything still held.
+                                </p>
+                            </form>
+                        </details>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
 
             <!-- Vendor Assignment -->
             {% if booking.status == 'PENDING' %}

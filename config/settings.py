@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'customers',
     'services',
     'bookings',
+    'payments',
     'promotions',
     'home_sections',
     'curations',
@@ -267,3 +268,59 @@ FCM_CREDENTIALS_FILE = BASE_DIR / 'secrets' / 'fcm-service-account.json'
 
 
 
+
+# ---------- Razorpay ----------
+# Money is captured into the platform's own Razorpay account, not the vendor's.
+# That capture IS the hold: nothing reaches a vendor until a payout is made
+# separately, so a booking can be refunded in full while work is disputed.
+RAZORPAY_KEY_ID = config('RAZORPAY_KEY_ID', default='')
+RAZORPAY_KEY_SECRET = config('RAZORPAY_KEY_SECRET', default='')
+
+# Set in the Razorpay dashboard when creating the webhook. Without it the
+# webhook endpoint refuses every delivery rather than trusting unsigned calls.
+RAZORPAY_WEBHOOK_SECRET = config('RAZORPAY_WEBHOOK_SECRET', default='')
+
+RAZORPAY_CURRENCY = config('RAZORPAY_CURRENCY', default='INR')
+
+# Live keys are 'rzp_live_*'. Anything else is a sandbox that cannot move real
+# money, which the dashboard shows so nobody mistakes test takings for revenue.
+RAZORPAY_IS_LIVE = RAZORPAY_KEY_ID.startswith('rzp_live_')
+
+# ---------- RazorpayX (payouts) ----------
+# A separate product from the payment gateway above, with its own dashboard,
+# its own credentials, and a virtual account that money is paid out FROM.
+# Sharing the gateway keys works on some accounts, hence the fallback.
+# `or` rather than a config default: an empty value in .env is how someone
+# says "I have not set this up", and that must still fall back.
+RAZORPAYX_KEY_ID = config('RAZORPAYX_KEY_ID', default='') or RAZORPAY_KEY_ID
+RAZORPAYX_KEY_SECRET = (
+    config('RAZORPAYX_KEY_SECRET', default='') or RAZORPAY_KEY_SECRET
+)
+
+# The RazorpayX virtual account payouts are debited from. Found on the X
+# dashboard under Account Details. Nothing can be paid out without it, which
+# is why it alone decides whether the feature is on.
+RAZORPAYX_ACCOUNT_NUMBER = config('RAZORPAYX_ACCOUNT_NUMBER', default='')
+
+# IMPS settles in minutes and is capped around 5 lakh; NEFT is the fallback
+# for larger amounts. Both are chosen per payout, this is just the default.
+RAZORPAYX_PAYOUT_MODE = config('RAZORPAYX_PAYOUT_MODE', default='IMPS')
+
+# Rupees. Above this a payout goes NEFT instead of IMPS.
+RAZORPAYX_IMPS_LIMIT = config('RAZORPAYX_IMPS_LIMIT', default=200000, cast=int)
+
+# Off until an account number is configured, so nothing about the existing
+# release flow changes until someone deliberately turns this on.
+RAZORPAYX_ENABLED = bool(RAZORPAYX_ACCOUNT_NUMBER)
+
+# Penny-drop validation costs a small fee per check. On by default because
+# paying the wrong account costs considerably more.
+RAZORPAYX_VALIDATE_ACCOUNTS = config(
+    'RAZORPAYX_VALIDATE_ACCOUNTS', default=True, cast=bool
+)
+
+# How close the bank's registered name must be to what the vendor typed
+# before the account is auto-verified. Below this an admin looks at it.
+RAZORPAYX_NAME_MATCH_THRESHOLD = config(
+    'RAZORPAYX_NAME_MATCH_THRESHOLD', default=0.85, cast=float
+)

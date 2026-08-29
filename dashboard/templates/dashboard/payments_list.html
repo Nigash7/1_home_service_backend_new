@@ -1,0 +1,169 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}Payments{% endblock %}
+
+{% block content %}
+<div class="p-8">
+
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">Payments</h1>
+            <p class="text-sm text-gray-500 mt-0.5">
+                Money collected through Razorpay
+                {% if not is_live %}
+                <span class="ml-1 px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-800 text-xs font-semibold">TEST MODE</span>
+                {% endif %}
+            </p>
+        </div>
+    </div>
+
+    <!-- What is actually sitting with the platform right now -->
+    <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 mb-6">
+        <div class="text-sm text-gray-500">Currently held</div>
+        <div class="flex items-baseline gap-3 mt-1">
+            <span class="text-3xl font-bold text-gray-900">&#8377;{{ totals.held_amount|floatformat:2 }}</span>
+            <span class="text-sm text-gray-500">
+                across {{ totals.held_count }} payment{{ totals.held_count|pluralize }}
+            </span>
+        </div>
+        <p class="text-xs text-gray-400 mt-2">
+            Captured but not yet released to a vendor. Every rupee here is still refundable.
+        </p>
+    </div>
+
+    <!-- Filters -->
+    <form method="get" class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 mb-6
+                              flex flex-wrap items-center gap-3">
+        <input type="text" name="search" value="{{ search }}"
+               placeholder="Order id, payment id, or booking number"
+               class="flex-1 min-w-64 px-3 py-2 border border-gray-300 rounded-lg text-sm">
+
+        <select name="status" class="px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            <option value="">All statuses</option>
+            {% for value, label in status_choices %}
+            <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+
+        <select name="payout" class="px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            <option value="">All</option>
+            {% for value, label in payout_choices %}
+            <option value="{{ value }}" {% if payout == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+
+        <button type="submit" class="bg-gray-800 hover:bg-gray-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">
+            Filter
+        </button>
+        <a href="{% url 'payments_list' %}" class="text-sm text-gray-500 hover:text-gray-700 px-2">Reset</a>
+    </form>
+
+    <!-- Results -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
+                <tr>
+                    <th class="text-left font-semibold px-6 py-3">Booking</th>
+                    <th class="text-left font-semibold px-6 py-3">Customer</th>
+                    <th class="text-right font-semibold px-6 py-3">Amount</th>
+                    <th class="text-left font-semibold px-6 py-3">Status</th>
+                    <th class="text-left font-semibold px-6 py-3">Money</th>
+                    <th class="text-left font-semibold px-6 py-3">Transfer</th>
+                    <th class="text-left font-semibold px-6 py-3">When</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for payment in payments %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-6 py-3">
+                        <a href="{% url 'booking_detail' payment.booking_id %}"
+                           class="font-semibold text-primary-600 hover:text-primary-700">
+                            #{{ payment.booking_id }}
+                        </a>
+                        <div class="text-xs text-gray-400 font-mono">{{ payment.razorpay_order_id }}</div>
+                    </td>
+                    <td class="px-6 py-3 text-gray-700">
+                        {{ payment.customer.user.get_full_name|default:payment.customer.user.username }}
+                    </td>
+                    <td class="px-6 py-3 text-right font-semibold text-gray-900">
+                        &#8377;{{ payment.amount|floatformat:2 }}
+                        {% if payment.amount_refunded > 0 %}
+                        <div class="text-xs font-normal text-amber-700">
+                            &minus;&#8377;{{ payment.amount_refunded|floatformat:2 }}
+                        </div>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-3">
+                        <span class="text-xs font-semibold px-2 py-0.5 rounded-full
+                            {% if payment.status == 'CAPTURED' %}bg-green-100 text-green-700
+                            {% elif payment.status == 'FAILED' %}bg-red-100 text-red-700
+                            {% elif payment.status == 'REFUNDED' or payment.status == 'PARTIALLY_REFUNDED' %}bg-amber-100 text-amber-700
+                            {% else %}bg-gray-100 text-gray-600{% endif %}">
+                            {{ payment.get_status_display }}
+                        </span>
+                        {% if not payment.is_live %}
+                        <span class="ml-1 px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-800 text-xs font-semibold">TEST</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-3">
+                        {% if payment.is_paid or payment.status == 'PARTIALLY_REFUNDED' %}
+                        <span class="text-xs font-semibold
+                            {% if payment.payout_status == 'HELD' %}text-blue-700
+                            {% elif payment.payout_status == 'RELEASED' %}text-gray-500
+                            {% else %}text-amber-700{% endif %}">
+                            {{ payment.get_payout_status_display }}
+                        </span>
+                        {% else %}
+                        <span class="text-xs text-gray-300">&mdash;</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-3">
+                        {% with payout=payment.payout %}
+                        {% if payout %}
+                        <span class="text-xs font-semibold
+                            {% if payout.status == 'processed' %}text-green-700
+                            {% elif payout.status == 'queued' or payout.status == 'processing' or payout.status == 'pending' %}text-blue-700
+                            {% else %}text-red-700{% endif %}">
+                            {{ payout.get_status_display }}
+                        </span>
+                        {% if payout.utr %}
+                        <div class="text-xs text-gray-400 font-mono">{{ payout.utr }}</div>
+                        {% endif %}
+                        {% else %}
+                        <span class="text-xs text-gray-300">&mdash;</span>
+                        {% endif %}
+                        {% endwith %}
+                    </td>
+                    <td class="px-6 py-3 text-gray-500 text-xs">
+                        {{ payment.created_at|date:"j M Y, g:i a" }}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7" class="px-6 py-12 text-center text-gray-400">
+                        No payments match this filter.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Paging -->
+    {% if page_obj.has_other_pages %}
+    <div class="flex items-center justify-between mt-4 text-sm text-gray-500">
+        <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        <div class="flex gap-2">
+            {% if page_obj.has_previous %}
+            <a href="?page={{ page_obj.previous_page_number }}&status={{ status }}&payout={{ payout }}&search={{ search }}"
+               class="px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50">Previous</a>
+            {% endif %}
+            {% if page_obj.has_next %}
+            <a href="?page={{ page_obj.next_page_number }}&status={{ status }}&payout={{ payout }}&search={{ search }}"
+               class="px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50">Next</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

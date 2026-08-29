@@ -16,6 +16,14 @@ urlpatterns = [
     path('bookings/<int:booking_id>/reschedule/', views.reschedule_booking_view, name='reschedule_booking'),
     path('bookings/<int:booking_id>/update-payment/', views.update_payment_view, name='update_payment'),
 
+    # Gateway payments (Razorpay)
+    path('payments/', views.payments_list_view, name='payments_list'),
+    path('payments/<int:payment_id>/release/', views.release_payment_view, name='release_payment'),
+    path('payments/<int:payment_id>/refund/', views.refund_payment_view, name='refund_payment'),
+    path('vendors/<int:vendor_id>/verify-bank-account/', views.verify_bank_account_view, name='verify_bank_account'),
+    path('vendors/<int:vendor_id>/validate-bank-account/', views.validate_bank_account_view, name='validate_bank_account'),
+    path('payments/<int:payment_id>/retry-payout/', views.retry_payout_view, name='retry_payout'),
+
     # Vendors
     path('vendors/', views.vendors_list_view, name='vendors_list'),
     path('vendors/add/', views.vendor_add_view, name='vendor_add'),

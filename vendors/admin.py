@@ -87,3 +87,36 @@ class VendorAdmin(admin.ModelAdmin):
     def category_list(self, obj):
         return ", ".join(c.name for c in obj.categories.all())
     category_list.short_description = "Categories"
+
+
+from .bank_models import VendorBankAccount, VendorBankAccountChange
+
+
+@admin.register(VendorBankAccount)
+class VendorBankAccountAdmin(admin.ModelAdmin):
+    list_display = ('vendor', 'masked_account_number', 'ifsc_code',
+                    'bank_name', 'is_verified', 'updated_at')
+    list_filter = ('is_verified', 'account_type')
+    search_fields = ('vendor__user__username', 'ifsc_code', 'bank_name')
+    readonly_fields = ('masked_account_number', 'verified_at', 'verified_by',
+                       'created_at', 'updated_at')
+    # The full number is what a payout is made against; it is not something to
+    # leave sitting on a list page. Use the vendor dashboard to act on these.
+    exclude = ('account_number',)
+
+
+@admin.register(VendorBankAccountChange)
+class VendorBankAccountChangeAdmin(admin.ModelAdmin):
+    list_display = ('vendor', 'old_account_masked', 'new_account_masked',
+                    'changed_by', 'changed_at')
+    search_fields = ('vendor__user__username',)
+    readonly_fields = [f.name for f in VendorBankAccountChange._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False

@@ -225,6 +225,32 @@ VENDOR_PAYOUT_PROCESSED = _e(
     "{amount} has been sent to your registered account.",
     route="/earnings",
 )
+VENDOR_BANK_ACCOUNT_CHANGED = _e(
+    "vendor.bank_account_changed", VENDOR, CAT_PAYMENT,
+    "Payout account {action}",
+    "Your payouts will now go to the account ending {account}. "
+    "If this was not you, contact support straight away.",
+    route="/profile/bank-account",
+)
+VENDOR_BANK_ACCOUNT_MISSING = _e(
+    "vendor.bank_account_missing", VENDOR, CAT_PAYMENT,
+    "Add your payout details",
+    "We cannot send your earnings until you add a bank account in the app.",
+    route="/profile/bank-account",
+)
+VENDOR_PAYOUT_FAILED = _e(
+    "vendor.payout_failed", VENDOR, CAT_PAYMENT,
+    "Payout could not be sent",
+    "We could not send {amount} because {reason}. Check your payout details "
+    "and we will try again.",
+    route="/profile/bank-account",
+)
+VENDOR_BANK_ACCOUNT_VERIFIED = _e(
+    "vendor.bank_account_verified", VENDOR, CAT_PAYMENT,
+    "Payout account verified",
+    "Your account ending {account} is verified. Earnings will be sent there.",
+    route="/profile/bank-account",
+)
 VENDOR_BROADCAST = _e(
     "vendor.broadcast", VENDOR, CAT_SYSTEM,
     "{title}", "{body}",

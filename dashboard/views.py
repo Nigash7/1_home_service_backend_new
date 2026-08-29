@@ -1,5 +1,6 @@
 import random
 from datetime import timedelta
+from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
 from django.contrib import messages
@@ -13,6 +14,13 @@ from django.db import models
 from django.db.models import Avg, Q, Sum
 
 from bookings.models import Booking
+from payments.models import Payment
+from payments import services as payment_services
+from payments.gateway import PaymentError
+from vendors import bank_services
+from vendors import payout_services as vendor_payout_services
+from payments import payoutx
+from payments.payoutx import PayoutError
 from vendors.models import Vendor, VendorDocument
 from services.models import ServiceCategory  # adjust to your actual app name
 
@@ -271,6 +279,17 @@ def booking_detail_view(request, booking_id):
         'active_page': 'bookings',
         'booking': booking,
         'available_vendors': available_vendors,
+        'payments': booking.payments.all(),
+        # Where a release would actually send the money. Shown next to the
+        # button so nobody releases into the dark.
+        'payout_account': getattr(booking.vendor, 'bank_account', None)
+        if booking.vendor_id else None,
+        'payouts_enabled': payoutx.is_enabled(),
+        # A booking with real gateway money on it must not also be edited by
+        # hand, or our books and Razorpay's start disagreeing.
+        'has_gateway_payment': booking.payments.exclude(
+            status=Payment.Status.CREATED
+        ).exists(),
     }
     return render(request, 'dashboard/booking_detail.html', context)
 
@@ -385,6 +404,17 @@ def update_payment_view(request, booking_id):
     amount = request.POST.get('amount')
     payment_status = request.POST.get('payment_status')
 
+    # Once money has actually moved through Razorpay, this booking's payment
+    # state belongs to the gateway. Editing it here would silently overwrite
+    # what was really collected -- use Refund instead.
+    if booking.payments.exclude(status=Payment.Status.CREATED).exists():
+        messages.error(
+            request,
+            'This booking has a gateway payment, so its payment status is set '
+            'by Razorpay. Use Refund to send money back.'
+        )
+        return redirect('booking_detail', booking_id=booking_id)
+
     if amount:
         booking.amount = amount
     if payment_status:
@@ -472,6 +502,9 @@ def vendor_detail_view(request, vendor_id):
         'reviews_page': reviews_page,
         'avg_rating': round(avg_rating, 2),
         'total_reviews': reviews.count(),
+        'payout_account': getattr(vendor, 'bank_account', None),
+        'bank_changes': vendor.bank_account_changes.all()[:5],
+        'payouts_enabled': payoutx.is_enabled(),
     }
     return render(request, 'dashboard/vendor_detail.html', context)
 
@@ -3387,3 +3420,247 @@ def pro_vendor_section_reorder_view(request, item_id):
         swap_with.save(update_fields=['sort_order'])
 
     return redirect('pro_vendor_section_detail', section_id=item.section_id)
+
+
+# ---------- Gateway Payments: release & refund ----------
+
+@admin_login_required
+def release_payment_view(request, payment_id):
+    """
+    Hand held money over to the vendor.
+
+    This is the escrow release. It is the one action that makes a payment
+    non-refundable, so it is deliberately the last step, not the default.
+    """
+    if request.method != 'POST':
+        return redirect('payments_list')
+
+    payment = get_object_or_404(Payment.objects.select_related('booking'), id=payment_id)
+
+    try:
+        payment_services.release_to_vendor(payment, by=request.admin_user)
+    except ValueError as exc:
+        messages.error(request, str(exc))
+        return redirect('booking_detail', booking_id=payment.booking_id)
+
+    messages.success(
+        request,
+        f'₹{payment.amount} released to the vendor for booking '
+        f'#{payment.booking_id}.'
+    )
+
+    # With payouts switched on, releasing and sending are one action -- an
+    # admin having to press a second button is just a way for money to sit
+    # released but unsent.
+    if payoutx.is_enabled():
+        _send_payout(request, payment)
+
+    return redirect('booking_detail', booking_id=payment.booking_id)
+
+
+def _send_payout(request, payment):
+    """Attempt the transfer and turn the outcome into a message."""
+    try:
+        payout = payment_services.create_payout(payment, by=request.admin_user)
+    except ValueError as exc:
+        messages.warning(
+            request,
+            f'Released, but not sent: {exc} You can send it from this page '
+            f'once that is fixed.'
+        )
+    except PayoutError as exc:
+        if exc.retriable:
+            messages.warning(
+                request,
+                'Released. RazorpayX did not confirm the transfer, so it may '
+                'or may not have gone through — check the payout status '
+                'before retrying.'
+            )
+        else:
+            messages.error(request, f'Released, but the transfer failed: {exc}')
+    else:
+        if payout.status == payout.Status.QUEUED:
+            messages.info(
+                request,
+                'Transfer queued — your RazorpayX balance is short. It will '
+                'go out automatically once the account is topped up.'
+            )
+        else:
+            messages.success(request, f'Transfer sent ({payout.get_status_display()}).')
+
+
+@admin_login_required
+def retry_payout_view(request, payment_id):
+    """
+    Send a payout that was released but never made it out.
+
+    Only reachable for a payout RazorpayX definitively refused. Anything in
+    flight is left alone -- retrying that is how a vendor gets paid twice.
+    """
+    if request.method != 'POST':
+        return redirect('payments_list')
+
+    payment = get_object_or_404(Payment.objects.select_related('booking'),
+                                id=payment_id)
+    _send_payout(request, payment)
+    return redirect('booking_detail', booking_id=payment.booking_id)
+
+
+@admin_login_required
+def validate_bank_account_view(request, vendor_id):
+    """Run the penny drop against a vendor's account on demand."""
+    if request.method != 'POST':
+        return redirect('vendor_detail', vendor_id=vendor_id)
+
+    vendor = get_object_or_404(Vendor, id=vendor_id)
+    account = getattr(vendor, 'bank_account', None)
+    if account is None:
+        messages.error(request, 'This vendor has not added payout details yet.')
+        return redirect('vendor_detail', vendor_id=vendor_id)
+
+    try:
+        account = vendor_payout_services.validate_account(account)
+    except ValueError as exc:
+        messages.error(request, str(exc))
+    except PayoutError as exc:
+        messages.error(request, f'The check could not be completed: {exc}')
+    else:
+        if account.validation_status == account.ValidationStatus.ACTIVE:
+            messages.success(
+                request,
+                f'The bank confirmed this account'
+                + (f' as "{account.registered_name}".' if account.registered_name else '.')
+            )
+        elif account.validation_status == account.ValidationStatus.NAME_MISMATCH:
+            messages.warning(
+                request,
+                f'The account is real but the bank has it under '
+                f'"{account.registered_name}", not '
+                f'"{account.account_holder_name}". Check before paying.'
+            )
+        else:
+            messages.error(request, 'The bank says this account is not valid.')
+    return redirect('vendor_detail', vendor_id=vendor_id)
+
+
+@admin_login_required
+def refund_payment_view(request, payment_id):
+    """
+    Send money back to the customer, in full or in part.
+
+    A blank amount means the whole refundable balance, which is what an admin
+    almost always wants and saves them retyping a figure they might get wrong.
+    """
+    if request.method != 'POST':
+        return redirect('payments_list')
+
+    payment = get_object_or_404(Payment.objects.select_related('booking'), id=payment_id)
+    raw_amount = (request.POST.get('amount') or '').strip()
+    reason = (request.POST.get('reason') or '').strip()
+
+    amount = None
+    if raw_amount:
+        try:
+            amount = Decimal(raw_amount)
+        except (InvalidOperation, ValueError):
+            messages.error(request, 'Enter a valid refund amount.')
+            return redirect('booking_detail', booking_id=payment.booking_id)
+
+    try:
+        payment_services.refund_payment(
+            payment, amount_rupees=amount, reason=reason
+        )
+    except ValueError as exc:
+        messages.error(request, str(exc))
+    except PaymentError as exc:
+        messages.error(request, f'Razorpay refused the refund: {exc}')
+    else:
+        payment.refresh_from_db()
+        messages.success(
+            request,
+            f'Refunded ₹{payment.amount_refunded} on booking '
+            f'#{payment.booking_id}.'
+        )
+    return redirect('booking_detail', booking_id=payment.booking_id)
+
+
+@admin_login_required
+def payments_list_view(request):
+    """
+    Every gateway payment, so held money can be found without knowing which
+    booking it sits on. Defaults to what needs attention: captured and held.
+    """
+    status = request.GET.get('status', '')
+    payout = request.GET.get('payout', '')
+    search = request.GET.get('search', '').strip()
+
+    payments = Payment.objects.select_related(
+        'booking', 'booking__vendor__user', 'customer__user', 'payout',
+    ).order_by('-created_at')
+
+    if status:
+        payments = payments.filter(status=status)
+    if payout:
+        payments = payments.filter(payout_status=payout)
+    if search:
+        # Order/payment ids, or a bare booking number -- an admin chasing a
+        # payment has one or the other in front of them, rarely both.
+        match = Q(razorpay_order_id__icontains=search) | Q(
+            razorpay_payment_id__icontains=search
+        )
+        if search.isdigit():
+            match |= Q(booking_id=int(search))
+        payments = payments.filter(match)
+
+    held = Payment.objects.filter(
+        status=Payment.Status.CAPTURED,
+        payout_status=Payment.PayoutStatus.HELD,
+    )
+    totals = {
+        'held_count': held.count(),
+        'held_amount': held.aggregate(total=Sum('amount'))['total'] or 0,
+    }
+
+    paginator = Paginator(payments, 25)
+    page = paginator.get_page(request.GET.get('page'))
+
+    context = {
+        'admin_user': request.admin_user,
+        'active_page': 'payments',
+        'payments': page,
+        'page_obj': page,
+        'status': status,
+        'payout': payout,
+        'search': search,
+        'totals': totals,
+        'status_choices': Payment.Status.choices,
+        'payout_choices': Payment.PayoutStatus.choices,
+        'is_live': settings.RAZORPAY_IS_LIVE,
+        'payouts_enabled': payoutx.is_enabled(),
+    }
+    return render(request, 'dashboard/payments_list.html', context)
+
+
+# ---------- Vendor payout account ----------
+
+@admin_login_required
+def verify_bank_account_view(request, vendor_id):
+    """
+    Confirm a vendor's payout details are really theirs.
+
+    Only ever a manual check today -- somebody looks at the passbook or does a
+    one-rupee transfer. The flag it sets is what stops money going out to an
+    account nobody has ever looked at.
+    """
+    if request.method != 'POST':
+        return redirect('vendor_detail', vendor_id=vendor_id)
+
+    vendor = get_object_or_404(Vendor, id=vendor_id)
+
+    try:
+        bank_services.verify_bank_account(vendor, by=request.admin_user)
+    except ValueError as exc:
+        messages.error(request, str(exc))
+    else:
+        messages.success(request, 'Payout account marked as verified.')
+    return redirect('vendor_detail', vendor_id=vendor_id)
