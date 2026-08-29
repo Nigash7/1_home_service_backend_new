@@ -28,6 +28,14 @@ class Review(models.Model):
         'bookings.Booking', on_delete=models.CASCADE, related_name='review',
         null=True, blank=True
     )
+    # A review comes from a booking or from a tender, never both. Keeping
+    # tender reviews in this same table is what lets a vendor's rating count
+    # everything they have done -- `reviews_received` already drives
+    # Vendor.average_rating and every pro vendor card.
+    tender = models.OneToOneField(
+        'tenders.Tender', on_delete=models.CASCADE, related_name='review',
+        null=True, blank=True
+    )
     customer = models.ForeignKey(
         'customers.Customer', on_delete=models.CASCADE, related_name='reviews_given',
         null=True, blank=True

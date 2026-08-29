@@ -10,7 +10,7 @@ from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404, render, redirect
 from django.http import JsonResponse
 from django.utils import timezone
-from django.db import models
+from django.db import models, transaction
 from django.db.models import Avg, Q, Sum
 
 from bookings.models import Booking
@@ -21,6 +21,8 @@ from vendors import bank_services
 from vendors import payout_services as vendor_payout_services
 from payments import payoutx
 from payments.payoutx import PayoutError
+from tenders.models import Tender, TenderBid
+from tenders import notifications as tender_notify
 from vendors.models import Vendor, VendorDocument
 from services.models import ServiceCategory  # adjust to your actual app name
 
@@ -3664,3 +3666,235 @@ def verify_bank_account_view(request, vendor_id):
     else:
         messages.success(request, 'Payout account marked as verified.')
     return redirect('vendor_detail', vendor_id=vendor_id)
+# ===========================================================================
+# Tenders (customer-posted requirements vendors bid on)
+# ===========================================================================
+
+@admin_login_required
+def tenders_list_view(request):
+    """
+    Every tender, newest first, with the approval queue reachable in one
+    click -- that is the only part of this flow the admin is required for.
+    """
+    status = request.GET.get('status', '')
+    category_id = request.GET.get('category', '')
+    search = request.GET.get('search', '').strip()
+
+    tenders = Tender.objects.select_related(
+        'customer__user', 'category', 'subcategory', 'awarded_bid__vendor__user'
+    ).with_bid_stats().order_by('-created_at')
+
+    if status:
+        tenders = tenders.filter(status=status)
+    if category_id:
+        tenders = tenders.filter(category_id=category_id)
+    if search:
+        tenders = tenders.filter(
+            models.Q(id__icontains=search) |
+            models.Q(title__icontains=search) |
+            models.Q(customer__user__first_name__icontains=search) |
+            models.Q(customer__user__last_name__icontains=search) |
+            models.Q(address_pincode__icontains=search)
+        )
+
+    paginator = Paginator(tenders, 20)
+    page_obj = paginator.get_page(request.GET.get('page', 1))
+
+    context = {
+        'admin_user': request.admin_user,
+        'active_page': 'tenders',
+        'page_obj': page_obj,
+        'status_choices': Tender.Status.choices,
+        'categories': ServiceCategory.objects.filter(is_active=True),
+        'current_status': status,
+        'current_category': category_id,
+        'search': search,
+        'tenders_pending_count': Tender.objects.filter(
+            status=Tender.Status.PENDING_APPROVAL
+        ).count(),
+    }
+    return render(request, 'dashboard/tenders_list.html', context)
+
+
+@admin_login_required
+def tender_detail_view(request, tender_id):
+    """
+    The whole story of one tender: the brief, the drawings, every bid side by
+    side, and -- once awarded -- the milestones and progress the vendor posted.
+    """
+    tender = get_object_or_404(
+        Tender.objects.select_related(
+            'customer__user', 'category', 'subcategory', 'awarded_bid__vendor__user'
+        ).prefetch_related(
+            'attachments', 'bids__vendor__user', 'bids__milestones',
+            'progress_updates__photos', 'progress_updates__vendor__user',
+        ),
+        id=tender_id,
+    )
+
+    bids = sorted(
+        tender.bids.exclude(status=TenderBid.Status.WITHDRAWN),
+        key=lambda b: b.amount,
+    )
+
+    # Who this would go out to, so whoever approves it can see the reach
+    # before committing. Only worth computing while it still matters.
+    matching_vendors = []
+    if tender.status == Tender.Status.PENDING_APPROVAL:
+        matching_vendors = list(tender.matching_vendors().select_related('user')[:50])
+
+    context = {
+        'admin_user': request.admin_user,
+        'active_page': 'tenders',
+        'tender': tender,
+        'bids': bids,
+        'matching_vendors': matching_vendors,
+        'matching_count': len(matching_vendors),
+        'review': getattr(tender, 'review', None),
+        'tenders_pending_count': Tender.objects.filter(
+            status=Tender.Status.PENDING_APPROVAL
+        ).count(),
+    }
+    return render(request, 'dashboard/tender_detail.html', context)
+
+
+@admin_login_required
+def tender_approve_view(request, tender_id):
+    """Publish a tender to every vendor who covers it."""
+    if request.method != 'POST':
+        return redirect('tender_detail', tender_id=tender_id)
+
+    tender = get_object_or_404(Tender, id=tender_id)
+
+    if tender.status != Tender.Status.PENDING_APPROVAL:
+        messages.error(request, 'Only a tender awaiting approval can be published.')
+        return redirect('tender_detail', tender_id=tender_id)
+
+    tender.status = Tender.Status.OPEN
+    tender.published_at = timezone.now()
+    tender.rejection_reason = ''
+    tender.save(update_fields=['status', 'published_at', 'rejection_reason', 'updated_at'])
+
+    vendor_count = tender_notify.notify_vendors_of_new_tender(tender)
+    tender_notify.notify_customer_approved(tender, vendor_count)
+
+    if vendor_count:
+        messages.success(
+            request, f'Tender published. {vendor_count} vendor(s) have been notified.'
+        )
+    else:
+        messages.success(
+            request,
+            'Tender published, but no verified vendor currently covers this '
+            'category. Add coverage to a vendor and they will see it straight away.'
+        )
+    return redirect('tender_detail', tender_id=tender_id)
+
+
+@admin_login_required
+def tender_reject_view(request, tender_id):
+    """Send a tender back to the customer with a reason they can act on."""
+    if request.method != 'POST':
+        return redirect('tender_detail', tender_id=tender_id)
+
+    tender = get_object_or_404(Tender, id=tender_id)
+
+    if tender.status != Tender.Status.PENDING_APPROVAL:
+        messages.error(request, 'Only a tender awaiting approval can be rejected.')
+        return redirect('tender_detail', tender_id=tender_id)
+
+    reason = (request.POST.get('reason') or '').strip()
+    if not reason:
+        messages.error(request, 'Give the customer a reason so they can fix it.')
+        return redirect('tender_detail', tender_id=tender_id)
+
+    tender.status = Tender.Status.REJECTED
+    tender.rejection_reason = reason
+    tender.save(update_fields=['status', 'rejection_reason', 'updated_at'])
+
+    tender_notify.notify_customer_rejected(tender)
+
+    messages.success(request, 'Tender sent back to the customer.')
+    return redirect('tender_detail', tender_id=tender_id)
+
+
+@admin_login_required
+def tender_award_view(request, tender_id):
+    """
+    Award a tender on the customer's behalf -- for when they ask over the
+    phone rather than tapping it in the app. Same effect as them choosing it:
+    every other bid is turned down and all sides are told.
+    """
+    if request.method != 'POST':
+        return redirect('tender_detail', tender_id=tender_id)
+
+    tender = get_object_or_404(Tender, id=tender_id)
+    bid_id = request.POST.get('bid_id')
+
+    if tender.status != Tender.Status.OPEN:
+        messages.error(request, 'Only an open tender can be awarded.')
+        return redirect('tender_detail', tender_id=tender_id)
+
+    try:
+        bid = tender.bids.select_related('vendor__user').get(
+            id=bid_id, status=TenderBid.Status.SUBMITTED
+        )
+    except TenderBid.DoesNotExist:
+        messages.error(request, 'That bid is not available to accept.')
+        return redirect('tender_detail', tender_id=tender_id)
+
+    now = timezone.now()
+    losing_bids = list(
+        tender.bids.exclude(id=bid.id)
+        .filter(status=TenderBid.Status.SUBMITTED)
+        .select_related('vendor__user')
+    )
+
+    with transaction.atomic():
+        bid.status = TenderBid.Status.ACCEPTED
+        bid.decided_at = now
+        bid.save(update_fields=['status', 'decided_at', 'updated_at'])
+
+        tender.bids.exclude(id=bid.id).filter(
+            status=TenderBid.Status.SUBMITTED
+        ).update(status=TenderBid.Status.REJECTED, decided_at=now)
+
+        tender.awarded_bid = bid
+        tender.status = Tender.Status.AWARDED
+        tender.awarded_at = now
+        tender.save(update_fields=['awarded_bid', 'status', 'awarded_at', 'updated_at'])
+
+    tender_notify.notify_customer_awarded(tender, bid)
+    tender_notify.notify_vendor_won(tender, bid)
+    tender_notify.notify_vendors_lost(tender, losing_bids)
+
+    messages.success(request, f'{bid.vendor.display_name} has been awarded this tender.')
+    return redirect('tender_detail', tender_id=tender_id)
+
+
+@admin_login_required
+def tender_cancel_view(request, tender_id):
+    """Close a tender down. Anyone with a live bid is told it is over."""
+    if request.method != 'POST':
+        return redirect('tender_detail', tender_id=tender_id)
+
+    tender = get_object_or_404(Tender, id=tender_id)
+
+    if tender.status in (Tender.Status.COMPLETED, Tender.Status.CANCELLED):
+        messages.error(request, 'This tender is already closed.')
+        return redirect('tender_detail', tender_id=tender_id)
+
+    live_bids = list(
+        tender.bids.exclude(status=TenderBid.Status.WITHDRAWN)
+        .select_related('vendor__user')
+    )
+    reason = (request.POST.get('reason') or '').strip()
+
+    tender.status = Tender.Status.CANCELLED
+    tender.cancellation_reason = reason
+    tender.save(update_fields=['status', 'cancellation_reason', 'updated_at'])
+
+    tender_notify.notify_vendors_tender_closed(tender, live_bids, reason=reason)
+
+    messages.success(request, 'Tender cancelled.')
+    return redirect('tender_detail', tender_id=tender_id)

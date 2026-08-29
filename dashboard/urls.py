@@ -23,6 +23,13 @@ urlpatterns = [
     path('vendors/<int:vendor_id>/verify-bank-account/', views.verify_bank_account_view, name='verify_bank_account'),
     path('vendors/<int:vendor_id>/validate-bank-account/', views.validate_bank_account_view, name='validate_bank_account'),
     path('payments/<int:payment_id>/retry-payout/', views.retry_payout_view, name='retry_payout'),
+    # Tenders (customer-posted requirements vendors bid on)
+    path('tenders/', views.tenders_list_view, name='tenders_list'),
+    path('tenders/<int:tender_id>/', views.tender_detail_view, name='tender_detail'),
+    path('tenders/<int:tender_id>/approve/', views.tender_approve_view, name='tender_approve'),
+    path('tenders/<int:tender_id>/reject/', views.tender_reject_view, name='tender_reject'),
+    path('tenders/<int:tender_id>/award/', views.tender_award_view, name='tender_award'),
+    path('tenders/<int:tender_id>/cancel/', views.tender_cancel_view, name='tender_cancel'),
 
     # Vendors
     path('vendors/', views.vendors_list_view, name='vendors_list'),
