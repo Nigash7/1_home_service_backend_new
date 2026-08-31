@@ -234,6 +234,86 @@ class TenderFlowTests(MediaSandboxMixin, TestCase):
         second = client.post(url, {'file': png('late.png')}, format='multipart')
         self.assertEqual(second.status_code, 400)
 
+    def test_sent_back_tender_takes_the_full_edit_payload_the_app_sends(self):
+        """
+        The edit form PATCHes every field, nulls included, so that clearing a
+        date or the area actually reaches the server instead of silently
+        keeping the old value. This is the round trip a customer makes after
+        an admin sends their tender back.
+        """
+        tender = self.make_tender(
+            area_sqft=1200,
+            preferred_start_date='2027-06-01',
+            bid_deadline='2027-05-01',
+        )
+        tender.status = Tender.Status.REJECTED
+        tender.rejection_reason = 'Budget looks like a typo'
+        tender.save()
+
+        response = self.client_for(self.customer).patch(
+            reverse('tender-detail', args=[tender.id]),
+            {
+                'title': 'Build a 3BHK (revised)',
+                'project_type': 'VILLA',
+                'category': self.category.id,
+                'subcategory': None,
+                'description': 'Ground floor construction',
+                'requirements': '',
+                'area_sqft': None,
+                'expected_budget': '1650000',
+                'preferred_start_date': None,
+                'duration_days': None,
+                'bid_deadline': None,
+                'address_text': '12 Beach Road',
+                'address_state': 'Kerala',
+                'address_district': 'Kollam',
+                'address_pincode': '691001',
+                'contact_phone': '9000000001',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+
+        tender.refresh_from_db()
+        self.assertEqual(tender.title, 'Build a 3BHK (revised)')
+        self.assertEqual(tender.expected_budget, Decimal('1650000'))
+        self.assertEqual(tender.project_type, 'VILLA')
+        # The nulls have to land, not be ignored.
+        self.assertIsNone(tender.subcategory_id)
+        self.assertIsNone(tender.area_sqft)
+        self.assertIsNone(tender.preferred_start_date)
+        self.assertIsNone(tender.bid_deadline)
+
+        # And it can go back for review, with the old reason cleared.
+        publish = self.client_for(self.customer).post(
+            reverse('tender-publish', args=[tender.id]))
+        self.assertEqual(publish.status_code, 200)
+        tender.refresh_from_db()
+        self.assertEqual(tender.status, Tender.Status.PENDING_APPROVAL)
+        self.assertEqual(tender.rejection_reason, '')
+
+    def test_attachments_can_be_changed_while_sent_back(self):
+        """
+        An admin often sends a tender back precisely because a drawing is
+        missing or wrong, so the attachment endpoints have to stay open in
+        REJECTED, not just DRAFT.
+        """
+        tender = self.make_tender()
+        tender.status = Tender.Status.REJECTED
+        tender.save()
+        client = self.client_for(self.customer)
+
+        added = client.post(
+            reverse('tender-attachment-upload', args=[tender.id]),
+            {'file': png('revised-plan.png'), 'caption': 'Revised plan'},
+            format='multipart',
+        )
+        self.assertEqual(added.status_code, 201)
+
+        removed = client.delete(
+            reverse('tender-attachment-delete', args=[added.data['id']]))
+        self.assertEqual(removed.status_code, 204)
+
     def test_customer_cannot_edit_after_submitting(self):
         tender = self.make_tender()
         tender.status = Tender.Status.PENDING_APPROVAL
