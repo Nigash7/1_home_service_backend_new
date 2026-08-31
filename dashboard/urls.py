@@ -3,8 +3,6 @@ from . import views
 
 urlpatterns = [
     path('', views.login_view, name='dashboard_login'),
-    path('verify-otp/', views.verify_otp_view, name='dashboard_verify_otp'),
-    path('resend-otp/', views.resend_otp_view, name='dashboard_resend_otp'),
     path('logout/', views.logout_view, name='dashboard_logout'),
     path('dashboard/', views.dashboard_view, name='dashboard'),
 
@@ -37,6 +35,21 @@ urlpatterns = [
     path('vendors/<int:vendor_id>/', views.vendor_detail_view, name='vendor_detail'),
     path('vendors/<int:vendor_id>/edit/', views.vendor_edit_view, name='vendor_edit'),
     path('vendors/<int:vendor_id>/verify/', views.verify_vendor_view, name='verify_vendor'),
+
+    # Vendor Subscriptions
+    path('subscription-plans/', views.subscription_plans_list_view, name='subscription_plans_list'),
+    path('subscription-plans/add/', views.subscription_plan_add_view, name='subscription_plan_add'),
+    path('subscription-plans/<int:plan_id>/edit/', views.subscription_plan_edit_view, name='subscription_plan_edit'),
+    path('subscription-plans/<int:plan_id>/toggle/', views.subscription_plan_toggle_view, name='subscription_plan_toggle'),
+    path('subscription-plans/<int:plan_id>/delete/', views.subscription_plan_delete_view, name='subscription_plan_delete'),
+    path('subscribers/', views.subscribers_list_view, name='subscribers_list'),
+    path('subscribers/assign/', views.subscription_assign_view, name='subscription_assign'),
+    path('subscriptions/<int:subscription_id>/renew/', views.subscription_renew_view, name='subscription_renew'),
+    path('subscriptions/<int:subscription_id>/cancel/', views.subscription_cancel_view, name='subscription_cancel'),
+    path('vendors/<int:vendor_id>/subscription/', views.vendor_subscription_view, name='vendor_subscription'),
+    path('subscription-requests/', views.subscription_requests_list_view, name='subscription_requests_list'),
+    path('subscription-requests/<int:request_id>/approve/', views.subscription_request_approve_view, name='subscription_request_approve'),
+    path('subscription-requests/<int:request_id>/reject/', views.subscription_request_reject_view, name='subscription_request_reject'),
 
     # Categories
     path('categories/', views.categories_list_view, name='categories_list'),
@@ -158,11 +171,22 @@ urlpatterns = [
     path('customers/', views.customers_list_view, name='customers_list'),
     path('customers/<int:customer_id>/', views.customer_detail_view, name='customer_detail'),
 
-    # Admin Users
+    # Roles (admin names a role and picks what it can reach)
+    path('roles/', views.roles_list_view, name='roles_list'),
+    path('roles/add/', views.role_add_view, name='role_add'),
+    path('roles/<int:role_id>/edit/', views.role_edit_view, name='role_edit'),
+    path('roles/<int:role_id>/delete/', views.role_delete_view, name='role_delete'),
+
+    # Dashboard users (username + password + a role)
     path('admin-users/', views.admin_users_list_view, name='admin_users_list'),
     path('admin-users/add/', views.admin_user_add_view, name='admin_user_add'),
     path('admin-users/<int:user_id>/edit/', views.admin_user_edit_view, name='admin_user_edit'),
+    path('admin-users/<int:user_id>/password/', views.admin_user_password_view, name='admin_user_password'),
     path('admin-users/<int:user_id>/delete/', views.admin_user_delete_view, name='admin_user_delete'),
+
+    # Sign-in log and lockouts
+    path('login-security/', views.login_security_view, name='login_security'),
+    path('login-security/unlock/', views.login_security_unlock_view, name='login_security_unlock'),
     path('support/', views.support_tickets_view, name='support_tickets'),
     path('support/<int:ticket_id>/', views.support_ticket_detail_view, name='support_ticket_detail'),
     path('assignment-center/', views.assignment_center_view, name='assignment_center'),

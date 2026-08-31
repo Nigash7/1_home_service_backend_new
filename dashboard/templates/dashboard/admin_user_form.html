@@ -1,129 +1,194 @@
 {% extends "dashboard/_layout.html" %}
 
-{% block title %}{% if is_edit %}Edit{% else %}Add{% endif %} Admin{% endblock %}
+{% block title %}{% if is_edit %}Edit User{% else %}Add User{% endif %}{% endblock %}
 
 {% block content %}
 <div class="max-w-2xl mx-auto">
-    <div class="flex items-center gap-3 mb-6">
-        <a href="{% url 'admin_users_list' %}" class="text-gray-500 hover:text-gray-700">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
-            </svg>
-        </a>
-        <h1 class="text-2xl font-bold text-gray-900">
-            {% if is_edit %}Edit Admin User{% else %}Add Admin User{% endif %}
+    <div class="mb-6">
+        <a href="{% url 'admin_users_list' %}" class="text-sm text-gray-500 hover:text-gray-700">&larr; Back to users</a>
+        <h1 class="text-2xl lg:text-3xl font-bold text-gray-900 mt-2">
+            {% if is_edit %}Edit {{ profile.full_name }}{% else %}Add a dashboard user{% endif %}
         </h1>
+        <p class="text-gray-500 mt-1">
+            {% if is_edit %}
+                Change who they are and what they can reach. Their password is set separately below.
+            {% else %}
+                Pick a username and password for them, then choose the role that decides what they see.
+            {% endif %}
+        </p>
     </div>
 
     {% if messages %}
         {% for message in messages %}
-            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm
+                {% if message.tags == 'error' %}bg-red-50 text-red-700
+                {% elif message.tags == 'warning' %}bg-amber-50 text-amber-800
+                {% else %}bg-green-50 text-green-700{% endif %}">
                 {{ message }}
             </div>
         {% endfor %}
     {% endif %}
 
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-        <form method="post" class="space-y-5">
-            {% csrf_token %}
+    <form method="post">
+        {% csrf_token %}
 
-            <div>
-                <label class="block text-sm font-semibold text-gray-700 mb-2">Full Name *</label>
-                <input type="text" name="full_name" required
-                       value="{% if is_edit %}{{ target_user.full_name }}{% endif %}"
-                       class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
-            </div>
+        <!-- Who they are -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-5">
+            <h2 class="font-semibold text-gray-900 mb-4">Who they are</h2>
 
-            <div>
-                <label class="block text-sm font-semibold text-gray-700 mb-2">Email *</label>
-                <input type="email" name="email" required
-                       {% if is_edit %}readonly value="{{ target_user.email }}" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg cursor-not-allowed"
-                       {% else %}class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"{% endif %}>
-                {% if is_edit %}<p class="text-xs text-gray-500 mt-1">Email can't be changed.</p>{% else %}<p class="text-xs text-gray-500 mt-1">OTP will be sent to this email on login.</p>{% endif %}
-            </div>
+            <label for="full_name" class="block text-sm font-medium text-gray-700 mb-2">Full name</label>
+            <input type="text" id="full_name" name="full_name" required maxlength="200"
+                   value="{{ form.full_name }}"
+                   class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition"/>
 
-            <div>
-                <label class="block text-sm font-semibold text-gray-700 mb-2">Role</label>
-                <select name="role"
-                        class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
-                    <option value="STAFF" {% if is_edit and target_user.role == 'STAFF' %}selected{% endif %}>Staff (limited permissions)</option>
-                    <option value="SUPER_ADMIN" {% if is_edit and target_user.role == 'SUPER_ADMIN' %}selected{% endif %}>Super Admin (full access)</option>
-                </select>
-            </div>
+            <label for="email" class="block text-sm font-medium text-gray-700 mb-2 mt-5">
+                Email <span class="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <input type="email" id="email" name="email"
+                   value="{{ form.email }}"
+                   class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition"/>
+            <p class="text-xs text-gray-400 mt-1.5">Not used to sign in — the username is.</p>
 
-            <div class="border border-gray-200 rounded-xl p-4 space-y-3">
-                <div class="text-sm font-semibold text-gray-700 mb-2">Staff Permissions (only for STAFF role)</div>
-                {% for perm in "can_manage_bookings,can_manage_vendors,can_manage_customers,can_manage_services,can_manage_content,can_manage_discounts,can_view_reports"|slice:":"|slice:":"|make_list %}{% endfor %}
+            <label class="flex items-center gap-3 mt-5 cursor-pointer">
+                <input type="checkbox" name="is_active"
+                       {% if form.is_active %}checked{% endif %}
+                       {% if is_self %}disabled{% endif %}
+                       class="w-4 h-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500"/>
+                <span class="text-sm text-gray-700">
+                    Active
+                    <span class="block text-xs text-gray-400">
+                        {% if is_self %}You cannot switch off your own account.{% else %}Unticking this blocks their sign-in without deleting anything.{% endif %}
+                    </span>
+                </span>
+            </label>
+            {% if is_self %}<input type="hidden" name="is_active" value="on"/>{% endif %}
+        </div>
 
-                <label class="flex items-center gap-3 cursor-pointer">
-                    <input type="checkbox" name="can_manage_bookings"
-                           {% if is_edit and target_user.can_manage_bookings or not is_edit %}checked{% endif %}
-                           class="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500">
-                    <div class="text-sm text-gray-700">Manage bookings</div>
-                </label>
-                <label class="flex items-center gap-3 cursor-pointer">
-                    <input type="checkbox" name="can_manage_vendors"
-                           {% if is_edit and target_user.can_manage_vendors or not is_edit %}checked{% endif %}
-                           class="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500">
-                    <div class="text-sm text-gray-700">Manage vendors</div>
-                </label>
-                <label class="flex items-center gap-3 cursor-pointer">
-                    <input type="checkbox" name="can_manage_customers"
-                           {% if is_edit and target_user.can_manage_customers %}checked{% endif %}
-                           class="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500">
-                    <div class="text-sm text-gray-700">Manage customers</div>
-                </label>
-                <label class="flex items-center gap-3 cursor-pointer">
-                    <input type="checkbox" name="can_manage_services"
-                           {% if is_edit and target_user.can_manage_services %}checked{% endif %}
-                           class="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500">
-                    <div class="text-sm text-gray-700">Manage services & categories</div>
-                </label>
-                <label class="flex items-center gap-3 cursor-pointer">
-                    <input type="checkbox" name="can_manage_content"
-                           {% if is_edit and target_user.can_manage_content %}checked{% endif %}
-                           class="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500">
-                    <div class="text-sm text-gray-700">Manage home page content (spotlights, sections, curations)</div>
-                </label>
-                <label class="flex items-center gap-3 cursor-pointer">
-                    <input type="checkbox" name="can_manage_discounts"
-                           {% if is_edit and target_user.can_manage_discounts %}checked{% endif %}
-                           class="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500">
-                    <div class="text-sm text-gray-700">Manage discounts & coupons</div>
-                </label>
-                <label class="flex items-center gap-3 cursor-pointer">
-                    <input type="checkbox" name="can_view_reports"
-                           {% if is_edit and target_user.can_view_reports %}checked{% endif %}
-                           class="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500">
-                    <div class="text-sm text-gray-700">View reports & analytics</div>
-                </label>
+        <!-- Sign-in -->
+        {% if not is_edit %}
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-5">
+            <h2 class="font-semibold text-gray-900 mb-4">Sign-in details</h2>
 
-                <p class="text-xs text-gray-500 mt-2">Super Admins have all permissions automatically.</p>
-            </div>
+            <label for="username" class="block text-sm font-medium text-gray-700 mb-2">Username</label>
+            <input type="text" id="username" name="username" required maxlength="150"
+                   value="{{ form.username }}"
+                   autocapitalize="none" spellcheck="false"
+                   class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition"/>
+            <p class="text-xs text-gray-400 mt-1.5">This is what they type to sign in. It cannot be changed later.</p>
 
-            <div>
-                <label class="flex items-center gap-3 cursor-pointer">
-                    <input type="checkbox" name="is_active"
-                           {% if is_edit and target_user.is_active or not is_edit %}checked{% endif %}
-                           class="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500">
-                    <div>
-                        <div class="text-sm font-semibold text-gray-700">Active</div>
-                        <div class="text-xs text-gray-500">Can log in to the dashboard</div>
+            <label for="password" class="block text-sm font-medium text-gray-700 mb-2 mt-5">Password</label>
+            <input type="password" id="password" name="password" required
+                   class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition"/>
+
+            <label for="confirm_password" class="block text-sm font-medium text-gray-700 mb-2 mt-5">Confirm password</label>
+            <input type="password" id="confirm_password" name="confirm_password" required
+                   class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition"/>
+
+            <p class="text-xs text-gray-400 mt-3">
+                At least 8 characters, not all digits, and not an obvious one. Pass
+                it to them yourself — it is hashed on save and can never be read back.
+            </p>
+        </div>
+        {% endif %}
+
+        <!-- Role -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-5">
+            <h2 class="font-semibold text-gray-900 mb-4">What they can reach</h2>
+
+            {% if can_make_super %}
+            <label class="flex items-start gap-3 p-3 rounded-xl border border-gray-200 hover:bg-gray-50 cursor-pointer mb-4">
+                <input type="checkbox" name="is_super_admin" id="is_super_admin"
+                       onchange="toggleRole()"
+                       {% if form.is_super_admin %}checked{% endif %}
+                       class="mt-0.5 w-4 h-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500"/>
+                <span>
+                    <span class="block text-sm font-medium text-gray-800">Super admin</span>
+                    <span class="block text-xs text-gray-500 mt-0.5">
+                        Reaches everything, including roles and users, and is not
+                        limited by any role. Give this to as few people as possible.
+                    </span>
+                </span>
+            </label>
+            {% endif %}
+
+            <div id="role-picker">
+                <label for="role" class="block text-sm font-medium text-gray-700 mb-2">Role</label>
+                {% if roles %}
+                    <select id="role" name="role"
+                            class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition bg-white">
+                        <option value="">— choose a role —</option>
+                        {% for role in roles %}
+                            <option value="{{ role.id }}"
+                                {% if form.role_id == role.id|stringformat:"s" %}selected{% endif %}>
+                                {{ role.name }}{% if not role.is_active %} (switched off){% endif %}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <p class="text-xs text-gray-400 mt-1.5">
+                        <a href="{% url 'roles_list' %}" class="text-primary-600 hover:underline">Manage roles</a>
+                        to change what each one can reach.
+                    </p>
+                {% else %}
+                    <div class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
+                        No role is available to you yet.
+                        <a href="{% url 'role_add' %}" class="font-semibold underline">Create one</a>
+                        before adding a user.
                     </div>
-                </label>
+                {% endif %}
             </div>
+        </div>
 
-            <div class="flex gap-3 pt-4 border-t border-gray-100">
-                <a href="{% url 'admin_users_list' %}"
-                   class="flex-1 text-center bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold py-2.5 rounded-lg">
-                    Cancel
-                </a>
-                <button type="submit"
-                        class="flex-1 bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2.5 rounded-lg">
-                    {% if is_edit %}Save Changes{% else %}Create Admin{% endif %}
-                </button>
+        <div class="flex items-center gap-3">
+            <button type="submit"
+                    class="bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2.5 px-6 rounded-lg shadow-sm">
+                {% if is_edit %}Save changes{% else %}Create user{% endif %}
+            </button>
+            <a href="{% url 'admin_users_list' %}"
+               class="text-sm text-gray-500 hover:text-gray-700 py-2.5 px-4">Cancel</a>
+        </div>
+    </form>
+
+    <!-- Password reset lives in its own form so saving the details above never touches it -->
+    {% if is_edit %}
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mt-8">
+        <h2 class="font-semibold text-gray-900">Set a new password</h2>
+        <p class="text-sm text-gray-500 mt-1 mb-4">
+            Use this when {{ profile.full_name }} is locked out or has forgotten
+            theirs. It also clears any failed attempts counting against them.
+        </p>
+
+        <form method="post" action="{% url 'admin_user_password' profile.id %}">
+            {% csrf_token %}
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label for="new_password" class="block text-sm font-medium text-gray-700 mb-2">New password</label>
+                    <input type="password" id="new_password" name="password" required
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition"/>
+                </div>
+                <div>
+                    <label for="new_confirm" class="block text-sm font-medium text-gray-700 mb-2">Confirm</label>
+                    <input type="password" id="new_confirm" name="confirm_password" required
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition"/>
+                </div>
             </div>
+            <button type="submit"
+                    class="mt-4 bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold py-2.5 px-5 rounded-lg">
+                Set password
+            </button>
         </form>
     </div>
+    {% endif %}
 </div>
+
+<script>
+    function toggleRole() {
+        const superBox = document.getElementById('is_super_admin');
+        const picker = document.getElementById('role-picker');
+        if (!superBox || !picker) return;
+        // A super admin is not limited by a role, so asking for one would only
+        // suggest it still applied.
+        picker.style.display = superBox.checked ? 'none' : '';
+    }
+    toggleRole();
+</script>
 {% endblock %}

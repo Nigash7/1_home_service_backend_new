@@ -1,0 +1,135 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}Subscription Plans{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+    <div class="flex justify-between items-start mb-6">
+        <div>
+            <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">Subscription Plans</h1>
+            <p class="text-gray-500 mt-1">Membership tiers you can put vendors on.</p>
+        </div>
+        <a href="{% url 'subscription_plan_add' %}"
+           class="bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2 px-4 rounded-lg flex items-center gap-2 shadow-sm">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            Add Plan
+        </a>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="mb-6 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800 flex gap-3">
+        <svg class="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <div>
+            <strong>Nothing is charged yet.</strong> The price on a plan is a label —
+            vendors are put on a plan by an admin, and any money taken offline is
+            typed onto the subscription. No plan blocks a vendor from working.
+        </div>
+    </div>
+
+    {% if plans and not has_default %}
+    <div class="mb-6 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800">
+        No plan is marked as the default. Tick <strong>Default plan</strong> on one of
+        them to say which tier new vendors should land on.
+    </div>
+    {% endif %}
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {% for plan in plans %}
+        <div class="bg-white rounded-2xl shadow-sm border {% if plan.is_default %}border-primary-300 ring-1 ring-primary-200{% else %}border-gray-100{% endif %} overflow-hidden hover:shadow-md transition flex flex-col">
+            <div class="bg-gradient-to-r {% if plan.is_free %}from-gray-600 to-gray-800{% else %}from-primary-500 to-primary-700{% endif %} p-4 text-white">
+                <div class="flex justify-between items-start gap-3">
+                    <div class="min-w-0">
+                        <div class="text-lg font-bold truncate">{{ plan.name }}</div>
+                        <div class="text-xs opacity-80">{{ plan.get_billing_period_display }}</div>
+                    </div>
+                    <div class="text-right flex-shrink-0">
+                        {% if plan.is_free %}
+                            <div class="text-2xl font-bold">Free</div>
+                        {% else %}
+                            <div class="text-2xl font-bold">₹{{ plan.price|floatformat:0 }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-4 flex-1 flex flex-col">
+                {% if plan.description %}
+                    <p class="text-sm text-gray-700 mb-3">{{ plan.description }}</p>
+                {% endif %}
+
+                {% if plan.feature_list %}
+                <ul class="space-y-1.5 mb-4">
+                    {% for feature in plan.feature_list %}
+                    <li class="flex items-start gap-2 text-xs text-gray-600">
+                        <svg class="w-4 h-4 text-green-500 flex-shrink-0 mt-px" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                        {{ feature }}
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+
+                <div class="flex flex-wrap items-center gap-2 mb-4 mt-auto">
+                    {% if plan.is_active %}
+                        <span class="bg-green-100 text-green-700 text-xs font-semibold px-2 py-0.5 rounded-full">Active</span>
+                    {% else %}
+                        <span class="bg-gray-100 text-gray-500 text-xs font-semibold px-2 py-0.5 rounded-full">Inactive</span>
+                    {% endif %}
+                    {% if plan.is_default %}
+                        <span class="bg-primary-100 text-primary-700 text-xs font-semibold px-2 py-0.5 rounded-full">Default</span>
+                    {% endif %}
+                    <a href="{% url 'subscribers_list' %}?plan={{ plan.id }}&status=ACTIVE"
+                       class="ml-auto text-xs text-primary-600 hover:underline">
+                        {{ plan.active_subscribers }} subscribed →
+                    </a>
+                </div>
+
+                <div class="flex gap-2">
+                    <a href="{% url 'subscription_plan_edit' plan.id %}"
+                       class="flex-1 text-center text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-lg">
+                        Edit
+                    </a>
+                    <form method="post" action="{% url 'subscription_plan_toggle' plan.id %}" class="flex-1">
+                        {% csrf_token %}
+                        <button type="submit"
+                                class="w-full text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-lg">
+                            {% if plan.is_active %}Deactivate{% else %}Activate{% endif %}
+                        </button>
+                    </form>
+                    {% if not plan.total_subscribers %}
+                    <form method="post" action="{% url 'subscription_plan_delete' plan.id %}"
+                          onsubmit="return confirm('Delete this plan?')" class="flex-1">
+                        {% csrf_token %}
+                        <button type="submit"
+                                class="w-full text-xs font-semibold bg-red-50 hover:bg-red-100 text-red-600 py-2 rounded-lg">
+                            Delete
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-span-full bg-white rounded-2xl border border-gray-100 p-12 text-center">
+            <p class="text-gray-500 mb-4">No plans yet.</p>
+            <a href="{% url 'subscription_plan_add' %}"
+               class="inline-block bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2 px-6 rounded-lg">
+                Create First Plan
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

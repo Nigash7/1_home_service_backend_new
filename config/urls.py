@@ -33,7 +33,8 @@ urlpatterns = [
     path('api/referrals/', include('referrals.urls')),
     path('api/branding/', include('branding.urls')),
     path('api/tenders/', include('tenders.urls')),
-    
+    path('api/subscriptions/', include('subscriptions.urls')),
+
 ]
 
 if settings.DEBUG:

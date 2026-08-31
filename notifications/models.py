@@ -9,7 +9,7 @@ from .events import CATEGORY_CHOICES, CAT_SYSTEM
 # ---------------------------------------------------------------------------
 CUSTOMER_MODEL = getattr(settings, "NOTIFY_CUSTOMER_MODEL", "customers.Customer")
 VENDOR_MODEL = getattr(settings, "NOTIFY_VENDOR_MODEL", "vendors.Vendor")
-ADMIN_MODEL = getattr(settings, "NOTIFY_ADMIN_MODEL", "dashboard.AdminUser")
+ADMIN_MODEL = getattr(settings, "NOTIFY_ADMIN_MODEL", "dashboard.AdminProfile")
 BOOKING_MODEL = getattr(settings, "NOTIFY_BOOKING_MODEL", "bookings.Booking")
 
 

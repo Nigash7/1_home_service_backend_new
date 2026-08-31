@@ -19,6 +19,7 @@ from payments.gateway import PaymentError
 from payments.models import Payment
 from services.models import ServiceCategory
 from vendors.models import Vendor, VendorBankAccount
+from dashboard.testing import sign_in
 
 
 @override_settings(
@@ -73,9 +74,7 @@ class DashboardPaymentControlsTests(TestCase):
         self.payment.mark_captured(payment_id='pay_TEST1', method='upi')
 
     def login(self):
-        session = self.client.session
-        session['admin_user_id'] = self.admin.id
-        session.save()
+        sign_in(self.client, self.admin)
 
     # ------------------------------------------------------------- release
 

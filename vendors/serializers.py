@@ -5,6 +5,8 @@ from rest_framework import serializers
 from accounts.models import User
 from services.models import ServiceCategory
 from services.serializers import ServiceCategorySerializer
+from subscriptions import services as subscription_services
+from subscriptions.models import SubscriptionPlan
 from .models import Vendor, VendorDocument
 
 
@@ -19,6 +21,10 @@ class VendorProfileSerializer(serializers.ModelSerializer):
     phone_number = serializers.CharField(source='user.phone_number', read_only=True)
     email = serializers.EmailField(source='user.email', read_only=True)
     categories = ServiceCategorySerializer(many=True, read_only=True)
+    # Enough for the profile screen's plan card without a second round trip.
+    # The full picture -- history, what else is on offer -- lives at
+    # /api/subscriptions/me/.
+    subscription = serializers.SerializerMethodField()
 
     class Meta:
         model = Vendor
@@ -28,8 +34,25 @@ class VendorProfileSerializer(serializers.ModelSerializer):
             # The app reads these back to show whether a work location is on
             # file; without them the location screen can never confirm a save.
             'latitude', 'longitude',
+            'subscription',
         ]
         read_only_fields = ['verification_status', 'categories', 'latitude', 'longitude']
+
+    def get_subscription(self, vendor):
+        """The plan card, or None when the vendor is on nothing."""
+        subscription = vendor.active_subscription
+        if subscription is None:
+            return None
+        return {
+            'plan_id': subscription.plan_id,
+            'plan_name': subscription.plan.name,
+            'price': str(subscription.plan.price),
+            'is_free': subscription.plan.is_free,
+            'billing_period': subscription.plan.get_billing_period_display(),
+            'end_date': subscription.end_date,
+            'days_remaining': subscription.days_remaining,
+            'is_expiring_soon': subscription.is_expiring_soon,
+        }
 
 
 class VendorAvailabilitySerializer(serializers.ModelSerializer):
@@ -79,6 +102,16 @@ class VendorSignupSerializer(serializers.Serializer):
     id_proof = serializers.FileField(write_only=True)
     address_proof = serializers.FileField(write_only=True, required=False)
     trade_certificate = serializers.FileField(write_only=True, required=False)
+
+    # --- Subscription ---
+    # The tier they tapped on the signup screen. Optional: every vendor lands
+    # on the free default regardless, and picking anything above it raises a
+    # request for an admin rather than granting it. A misconfigured plan
+    # catalogue must never be the reason somebody cannot register.
+    plan = serializers.PrimaryKeyRelatedField(
+        queryset=SubscriptionPlan.objects.filter(is_active=True),
+        required=False, allow_null=True, write_only=True,
+    )
 
     def to_internal_value(self, data):
         # A multipart body cannot repeat a field key, so the app sends the
@@ -133,6 +166,7 @@ class VendorSignupSerializer(serializers.Serializer):
             VendorDocument.DocType.TRADE_CERTIFICATE: validated_data.pop('trade_certificate', None),
         }
         categories = validated_data.pop('categories')
+        chosen_plan = validated_data.pop('plan', None)
         validated_data.pop('password_confirm')
 
         user = User.objects.create_user(
@@ -162,7 +196,32 @@ class VendorSignupSerializer(serializers.Serializer):
             for doc_type, f in documents.items() if f
         ])
 
+        self._start_subscription(vendor, chosen_plan)
         return vendor
+
+    def _start_subscription(self, vendor, chosen_plan):
+        """
+        Every new vendor lands on the free default tier.
+
+        Picking a higher tier on the signup screen does not grant it -- there
+        is nothing to charge them with yet, so it is recorded as a request for
+        an admin to answer. Registration must not fail over any of this, so a
+        catalogue with no default plan simply leaves them unsubscribed.
+        """
+        subscription = subscription_services.ensure_default_subscription(vendor)
+
+        if chosen_plan is None:
+            return
+        if subscription and subscription.plan_id == chosen_plan.id:
+            return
+
+        try:
+            subscription_services.request_upgrade(
+                vendor, chosen_plan, note='Chosen during signup',
+            )
+        except subscription_services.SubscriptionError:
+            # Nothing here is worth losing a registration over.
+            pass
 
 
 def _absolute(serializer, image):

@@ -1,0 +1,158 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}Login Security{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+    <div class="mb-6">
+        <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">Login Security</h1>
+        <p class="text-gray-500 mt-1">
+            Every sign-in attempt at this panel, and anything locked out right now.
+        </p>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm
+                {% if message.tags == 'error' %}bg-red-50 text-red-700
+                {% elif message.tags == 'warning' %}bg-amber-50 text-amber-800
+                {% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="mb-6 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800">
+        A username locks after <strong>{{ username_threshold }}</strong> wrong passwords,
+        and one address locks after <strong>{{ ip_threshold }}</strong> across any number of
+        usernames. Each further batch of failures makes the wait longer — 15 minutes,
+        then an hour, then a day. Signing in successfully clears the count.
+    </div>
+
+    <!-- Currently locked -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+        <h2 class="font-semibold text-gray-900 mb-4">Locked out right now</h2>
+
+        {% if locks %}
+            <div class="space-y-3">
+                {% for lock in locks %}
+                <div class="flex items-center justify-between gap-4 p-3 rounded-xl bg-red-50 border border-red-100">
+                    <div class="min-w-0">
+                        <div class="font-medium text-gray-900 text-sm">
+                            {% if lock.scope == 'username' %}
+                                Username <code class="bg-white px-1.5 py-0.5 rounded">{{ lock.key }}</code>
+                            {% else %}
+                                Address <code class="bg-white px-1.5 py-0.5 rounded">{{ lock.key }}</code>
+                            {% endif %}
+                        </div>
+                        <div class="text-xs text-gray-600 mt-0.5">
+                            {{ lock.status.failures }} failed attempt{{ lock.status.failures|pluralize }} —
+                            unlocks in {{ lock.status.wait_text }}
+                        </div>
+                    </div>
+                    <form method="post" action="{% url 'login_security_unlock' %}" class="flex-shrink-0">
+                        {% csrf_token %}
+                        <input type="hidden" name="scope" value="{{ lock.scope }}"/>
+                        <input type="hidden" name="key" value="{{ lock.key }}"/>
+                        <button type="submit"
+                                class="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-xs font-semibold py-2 px-3 rounded-lg">
+                            Unlock now
+                        </button>
+                    </form>
+                </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="text-sm text-gray-500">Nothing is locked. No account is being guessed at.</p>
+        {% endif %}
+    </div>
+
+    <!-- The log -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="p-4 border-b border-gray-100">
+            <form method="get" class="flex flex-wrap items-center gap-3">
+                <input type="text" name="q" value="{{ query }}" placeholder="Username or IP address"
+                       class="flex-1 min-w-[200px] px-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"/>
+                <select name="outcome"
+                        class="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-primary-500 outline-none">
+                    <option value="">All outcomes</option>
+                    {% for value, label in outcomes %}
+                        <option value="{{ value }}" {% if outcome == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit"
+                        class="bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold py-2 px-4 rounded-lg">
+                    Filter
+                </button>
+                {% if query or outcome %}
+                    <a href="{% url 'login_security' %}" class="text-sm text-gray-500 hover:text-gray-700">Clear</a>
+                {% endif %}
+            </form>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                    <tr>
+                        <th class="text-left font-semibold px-6 py-3">When</th>
+                        <th class="text-left font-semibold px-6 py-3">Username tried</th>
+                        <th class="text-left font-semibold px-6 py-3">From</th>
+                        <th class="text-left font-semibold px-6 py-3">Outcome</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for attempt in attempts %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-3 text-gray-500 whitespace-nowrap">
+                            {{ attempt.created_at|date:"j M Y, g:i:s a" }}
+                        </td>
+                        <td class="px-6 py-3">
+                            <code class="bg-gray-100 text-gray-700 px-2 py-0.5 rounded text-xs">{{ attempt.username|default:"(blank)" }}</code>
+                        </td>
+                        <td class="px-6 py-3 text-gray-500">
+                            {{ attempt.ip_address|default:"unknown" }}
+                        </td>
+                        <td class="px-6 py-3">
+                            {% if attempt.outcome == 'SUCCESS' %}
+                                <span class="bg-green-50 text-green-700 text-xs font-medium px-2 py-1 rounded-full">Signed in</span>
+                            {% elif attempt.outcome == 'LOCKED_OUT' %}
+                                <span class="bg-gray-900 text-white text-xs font-medium px-2 py-1 rounded-full">Blocked</span>
+                            {% else %}
+                                <span class="bg-red-50 text-red-700 text-xs font-medium px-2 py-1 rounded-full">{{ attempt.get_outcome_display }}</span>
+                            {% endif %}
+                            {% if attempt.cleared %}
+                                <span class="text-xs text-gray-400 ml-1">(cleared)</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="4" class="px-6 py-10 text-center text-gray-500">
+                            Nothing logged yet.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if page_obj.has_other_pages %}
+        <div class="flex items-center justify-between px-6 py-4 border-t border-gray-100 text-sm">
+            <span class="text-gray-500">
+                Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+            </span>
+            <div class="flex gap-2">
+                {% if page_obj.has_previous %}
+                    <a href="?page={{ page_obj.previous_page_number }}{% if query %}&q={{ query }}{% endif %}{% if outcome %}&outcome={{ outcome }}{% endif %}"
+                       class="px-3 py-1.5 border border-gray-300 rounded-lg hover:bg-gray-50">Previous</a>
+                {% endif %}
+                {% if page_obj.has_next %}
+                    <a href="?page={{ page_obj.next_page_number }}{% if query %}&q={{ query }}{% endif %}{% if outcome %}&outcome={{ outcome }}{% endif %}"
+                       class="px-3 py-1.5 border border-gray-300 rounded-lg hover:bg-gray-50">Next</a>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

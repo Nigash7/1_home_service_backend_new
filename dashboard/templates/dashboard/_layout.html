@@ -33,7 +33,7 @@
         </div>
 
         <!-- Nav links -->
-        <nav class="flex-1 overflow-y-auto py-4">
+        <nav id="sidebar-nav" class="flex-1 overflow-y-auto py-4">
             <a href="{% url 'dashboard' %}"
                class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'dashboard' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -41,6 +41,7 @@
                 </svg>
                 Dashboard
             </a>
+            {% if 'bookings.assign' in admin_perms %}
             <a href="{% url 'assignment_center' %}"
                class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'assignment_center' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -48,7 +49,9 @@
                 </svg>
                 Assignment Center
             </a>
+            {% endif %}
 
+           {% if 'bookings.view' in admin_perms %}
            <a href="{% url 'bookings_list' %}"
                class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'bookings' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -56,7 +59,9 @@
                 </svg>
                 Bookings
             </a>
+           {% endif %}
 
+            {% if 'payments.view' in admin_perms %}
             <a href="{% url 'payments_list' %}"
                class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'payments' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -64,6 +69,8 @@
                 </svg>
                 Payments
             </a>
+            {% endif %}
+            {% if 'tenders.view' in admin_perms %}
             <a href="{% url 'tenders_list' %}"
                class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'tenders' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -72,6 +79,8 @@
                 Tenders
                 {% if tenders_pending_count %}<span class="ml-auto bg-orange-500 text-white text-xs px-2 py-0.5 rounded-full">{{ tenders_pending_count }}</span>{% endif %}
             </a>
+            {% endif %}
+            {% if 'vendors.view' in admin_perms %}
             <a href="{% url 'vendors_list' %}"
                class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'vendors' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -79,6 +88,8 @@
                 </svg>
                 Vendors
             </a>
+            {% endif %}
+            {% if 'vendors.view' in admin_perms %}
             <a href="{% url 'pro_vendors_list' %}"
                class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'pro_vendors' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -86,6 +97,8 @@
                 </svg>
                 Pro Vendors
             </a>
+            {% endif %}
+            {% if 'catalogue.view' in admin_perms %}
             <a href="{% url 'categories_list' %}"
                class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'categories' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -93,9 +106,13 @@
                 </svg>
                 Categories
             </a>
+            {% endif %}
+            {% if 'content.view' in admin_perms or 'referrals.view' in admin_perms or 'forms.view' in admin_perms %}
             <div class="px-6 pt-4 pb-1 text-xs uppercase tracking-wider text-gray-500 font-semibold">
                 Home Page
             </div>
+            {% endif %}
+            {% if 'content.view' in admin_perms %}
             <a href="{% url 'header_banners_list' %}"
                class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'header_banners' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -103,6 +120,8 @@
                 </svg>
                 Header Carousel
             </a>
+            {% endif %}
+            {% if 'content.view' in admin_perms %}
             <a href="{% url 'spotlights_list' %}"
                class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'spotlights' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -110,6 +129,8 @@
                 </svg>
                 Spotlights
             </a>
+            {% endif %}
+            {% if 'content.view' in admin_perms %}
             <a href="{% url 'branding' %}"
                class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'branding' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -117,6 +138,8 @@
                 </svg>
                 App Branding
             </a>
+            {% endif %}
+            {% if 'referrals.view' in admin_perms %}
             <a href="{% url 'referrals_list' %}"
                class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'referrals' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -124,6 +147,8 @@
                 </svg>
                 Refer &amp; Earn
             </a>
+            {% endif %}
+            {% if 'content.view' in admin_perms %}
             <a href="{% url 'promo_cards_list' %}"
                class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'promo_cards' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -131,6 +156,8 @@
                 </svg>
                 Promo Cards
             </a>
+            {% endif %}
+            {% if 'content.view' in admin_perms %}
             <a href="{% url 'home_sections_list' %}"
                class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'home_sections' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -138,6 +165,8 @@
                 </svg>
                 Home Sections
             </a>
+            {% endif %}
+            {% if 'content.view' in admin_perms %}
             <a href="{% url 'pro_vendor_sections_list' %}"
                class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'pro_vendor_sections' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -145,6 +174,8 @@
                 </svg>
                 Pro Vendor Sections
             </a>
+            {% endif %}
+            {% if 'content.view' in admin_perms %}
             <a href="{% url 'curations_list' %}"
                class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'curations' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -152,6 +183,8 @@
                 </svg>
                 Curations
             </a>
+            {% endif %}
+            {% if 'forms.view' in admin_perms %}
             <a href="{% url 'forms_list' %}"
                class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'forms' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -159,9 +192,46 @@
                 </svg>
                 Service Forms
             </a>
+            {% endif %}
+            {% if 'subscriptions.view' in admin_perms %}
+            <div class="px-6 pt-4 pb-1 text-xs uppercase tracking-wider text-gray-500 font-semibold">
+                Subscriptions
+            </div>
+            {% endif %}
+            {% if 'subscriptions.view' in admin_perms %}
+            <a href="{% url 'subscription_plans_list' %}"
+               class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'subscription_plans' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/>
+                </svg>
+                Plans
+            </a>
+            {% endif %}
+            {% if 'subscriptions.view' in admin_perms %}
+            <a href="{% url 'subscribers_list' %}"
+               class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'subscribers' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/>
+                </svg>
+                Subscribers
+            </a>
+            {% endif %}
+            {% if 'subscriptions.view' in admin_perms %}
+            <a href="{% url 'subscription_requests_list' %}"
+               class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'subscription_requests' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11l5-5m0 0l5 5m-5-5v12"/>
+                </svg>
+                Upgrade Requests
+                {% if subscription_requests_pending_count %}<span class="ml-auto bg-orange-500 text-white text-xs px-2 py-0.5 rounded-full">{{ subscription_requests_pending_count }}</span>{% endif %}
+            </a>
+            {% endif %}
+            {% if 'marketing.view' in admin_perms %}
             <div class="px-6 pt-4 pb-1 text-xs uppercase tracking-wider text-gray-500 font-semibold">
                 Promotions
             </div>
+            {% endif %}
+            {% if 'marketing.view' in admin_perms %}
             <a href="{% url 'discounts_list' %}"
                class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'discounts' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -169,6 +239,8 @@
                 </svg>
                 Discounts
             </a>
+            {% endif %}
+            {% if 'marketing.view' in admin_perms %}
             <a href="{% url 'coupons_list' %}"
                class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'coupons' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -176,9 +248,13 @@
                 </svg>
                 Coupons
             </a>
+            {% endif %}
+            {% if 'reports.view' in admin_perms or 'customers.view' in admin_perms or 'support.view' in admin_perms %}
             <div class="px-6 pt-4 pb-1 text-xs uppercase tracking-wider text-gray-500 font-semibold">
                 Insights
             </div>
+            {% endif %}
+            {% if 'reports.view' in admin_perms %}
             <a href="{% url 'reports' %}"
                class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'reports' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -186,6 +262,8 @@
                 </svg>
                 Reports
             </a>
+            {% endif %}
+            {% if 'customers.view' in admin_perms %}
             <a href="{% url 'customers_list' %}"
                class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'customers' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -193,6 +271,8 @@
                 </svg>
                 Customers
             </a>
+            {% endif %}
+            {% if 'support.view' in admin_perms %}
             <a href="{% url 'support_tickets' %}"
                class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'support' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -201,17 +281,38 @@
                 Help &amp; Support
                 {% if open_count %}<span class="ml-auto bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">{{ open_count }}</span>{% endif %}
             </a>
+            {% endif %}
 
-            {% if admin_user.is_super_admin %}
+            {% if 'system.roles' in admin_perms or 'system.staff' in admin_perms or 'system.security' in admin_perms %}
             <div class="px-6 pt-4 pb-1 text-xs uppercase tracking-wider text-gray-500 font-semibold">
                 System
             </div>
+            {% endif %}
+            {% if 'system.roles' in admin_perms %}
+            <a href="{% url 'roles_list' %}"
+               class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'roles' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/>
+                </svg>
+                Roles
+            </a>
+            {% endif %}
+            {% if 'system.staff' in admin_perms %}
             <a href="{% url 'admin_users_list' %}"
                class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'admin_users' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
                 </svg>
-                Admin Users
+                Dashboard Users
+            </a>
+            {% endif %}
+            {% if 'system.security' in admin_perms %}
+            <a href="{% url 'login_security' %}"
+               class="flex items-center gap-3 px-6 py-3 text-sm hover:bg-gray-800 transition {% if active_page == 'login_security' %}bg-gray-800 text-white border-l-4 border-primary-500{% endif %}">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M12 3l7.5 3v5.25c0 4.28-3.05 8.29-7.5 9.75-4.45-1.46-7.5-5.47-7.5-9.75V6L12 3z"/>
+                </svg>
+                Login Security
             </a>
             {% endif %}
         </nav>
@@ -220,11 +321,11 @@
         <div class="border-t border-gray-800 p-4">
             <div class="flex items-center gap-3 mb-3">
                 <div class="w-10 h-10 bg-primary-600 rounded-full flex items-center justify-center text-white font-semibold">
-                    {{ admin_user.full_name|slice:":1"|upper }}
+                    {{ admin_profile.full_name|slice:":1"|upper }}
                 </div>
                 <div class="flex-1 min-w-0">
-                    <div class="text-sm text-white font-medium truncate">{{ admin_user.full_name }}</div>
-                    <div class="text-xs text-gray-500 truncate">{{ admin_user.get_role_display }}</div>
+                    <div class="text-sm text-white font-medium truncate">{{ admin_profile.full_name }}</div>
+                    <div class="text-xs text-gray-500 truncate">{{ admin_profile.role_display }}</div>
                 </div>
             </div>
             <a href="{% url 'dashboard_logout' %}"
@@ -239,9 +340,217 @@
 
     <!-- Main content -->
     <main class="flex-1 lg:ml-0 overflow-x-hidden">
-        <div class="p-4 lg:p-8 pt-16 lg:pt-8">
+        <div id="pjax-content" class="p-4 lg:p-8 pt-16 lg:pt-8">
             {% block content %}{% endblock %}
         </div>
     </main>
 </div>
+
+<!-- Loading bar shown while a sidebar link swaps in its page -->
+<div id="pjax-progress" class="fixed top-0 left-0 h-0.5 bg-primary-500 z-50 w-0 opacity-0 pointer-events-none"></div>
+
+<script>
+/*
+ * Sidebar navigation.
+ *
+ * Clicking a menu item used to reload the whole document, which threw away the
+ * <nav> element's own scroll position and bounced the menu back to the top.
+ *
+ * Two things fix that:
+ *   1. The menu's scroll offset is kept in sessionStorage and put back on load,
+ *      so even a full page load (form posts, links inside the page) reopens the
+ *      menu where it was.
+ *   2. Sidebar links fetch the target page and swap only #pjax-content, so the
+ *      sidebar element itself is never re-created and nothing moves at all.
+ *
+ * Step 2 deliberately bows out for pages that carry their own scripts (charts,
+ * maps, form widgets). Those scripts declare top-level const/let, which would
+ * throw "already declared" the second time a page is visited in the same
+ * document, so they get a normal full page load — step 1 still applies there.
+ */
+(function () {
+    'use strict';
+
+    var nav = document.getElementById('sidebar-nav');
+    var content = document.getElementById('pjax-content');
+    var sidebar = document.getElementById('sidebar');
+    var progress = document.getElementById('pjax-progress');
+    var SCROLL_KEY = 'dashboardNavScroll';
+
+    if (!nav) { return; }
+
+    /* ----- 1. remember where the menu was scrolled to ---------------------- */
+
+    function saveNavScroll() {
+        try { sessionStorage.setItem(SCROLL_KEY, String(nav.scrollTop)); } catch (e) {}
+    }
+
+    function restoreNavScroll() {
+        try {
+            var y = parseInt(sessionStorage.getItem(SCROLL_KEY) || '0', 10);
+            if (y > 0) { nav.scrollTop = y; }
+        } catch (e) {}
+    }
+
+    restoreNavScroll();
+
+    var saveTimer = null;
+    nav.addEventListener('scroll', function () {
+        // setTimeout rather than rAF: rAF is frozen in background tabs, and the
+        // offset still has to be recorded if the page is left from one.
+        if (saveTimer) { clearTimeout(saveTimer); }
+        saveTimer = setTimeout(saveNavScroll, 100);
+    }, { passive: true });
+    window.addEventListener('pagehide', saveNavScroll);
+
+    /* ----- 2. swap the page in instead of reloading the document ----------- */
+
+    if (!content || !progress || !sidebar || !window.fetch || !window.DOMParser ||
+        !window.AbortController || !window.history.pushState) {
+        return; // older browser: plain full page loads, scroll memory still applies
+    }
+
+    var inflight = null;
+    var shownUrl = window.location.href; // the URL whose page is currently in the DOM
+
+    function withoutHash(url) {
+        return url.split('#')[0];
+    }
+
+    function startProgress() {
+        progress.style.transition = 'none';
+        progress.style.width = '0%';
+        progress.style.opacity = '1';
+        void progress.offsetWidth; // flush, so the width transition actually runs
+        progress.style.transition = 'width 400ms ease-out';
+        progress.style.width = '70%';
+    }
+
+    function stopProgress() {
+        progress.style.transition = 'width 150ms ease-out, opacity 300ms ease-out 150ms';
+        progress.style.width = '100%';
+        progress.style.opacity = '0';
+        setTimeout(function () {
+            progress.style.transition = 'none';
+            progress.style.width = '0%';
+        }, 500);
+    }
+
+    function closeMobileSidebar() {
+        // No-op on large screens, where lg:translate-x-0 overrides this class.
+        sidebar.classList.add('-translate-x-full');
+    }
+
+    function fullLoad(url) {
+        saveNavScroll();
+        window.location.href = url;
+    }
+
+    function navigate(url, options) {
+        options = options || {};
+        if (inflight) { inflight.abort(); }
+
+        var controller = new AbortController();
+        inflight = controller;
+        startProgress();
+
+        fetch(url, {
+            headers: { 'X-Pjax': '1' },
+            credentials: 'same-origin',
+            redirect: 'follow',
+            signal: controller.signal
+        }).then(function (response) {
+            var type = response.headers.get('Content-Type') || '';
+            if (!response.ok || type.indexOf('text/html') === -1) {
+                throw new Error('pjax:fallback');
+            }
+            return response.text().then(function (html) {
+                return { html: html, url: response.url || url };
+            });
+        }).then(function (result) {
+            var doc = new DOMParser().parseFromString(result.html, 'text/html');
+            var incomingContent = doc.getElementById('pjax-content');
+            var incomingNav = doc.getElementById('sidebar-nav');
+
+            // Off-layout page (login redirect, Django admin): let the browser do it.
+            if (!incomingContent) { throw new Error('pjax:fallback'); }
+
+            // Page brings its own scripts: they must run in a fresh document.
+            if (incomingContent.querySelector('script')) { throw new Error('pjax:fallback'); }
+
+            content.innerHTML = incomingContent.innerHTML;
+
+            // Re-render the menu so the active highlight and the badge counts
+            // stay current, then put its scroll offset straight back.
+            if (incomingNav) {
+                var offset = nav.scrollTop;
+                nav.innerHTML = incomingNav.innerHTML;
+                nav.scrollTop = offset;
+                saveNavScroll();
+            }
+
+            document.title = doc.title;
+
+            if (options.replaceState) {
+                history.replaceState({ pjax: true, y: options.scrollY || 0 }, '', result.url);
+            } else {
+                history.pushState({ pjax: true, y: 0 }, '', result.url);
+            }
+            shownUrl = result.url;
+
+            window.scrollTo(0, options.scrollY || 0);
+            closeMobileSidebar();
+        }).catch(function (err) {
+            if (err && err.name === 'AbortError') { return; }
+            fullLoad(url);
+        }).then(function () {
+            if (inflight === controller) {
+                inflight = null;
+                stopProgress();
+            }
+        });
+    }
+
+    nav.addEventListener('click', function (event) {
+        if (event.defaultPrevented || event.button !== 0) { return; }
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) { return; }
+
+        var link = event.target.closest && event.target.closest('a');
+        if (!link || !link.href || link.target || link.hasAttribute('download')) { return; }
+        if (link.hasAttribute('data-no-pjax')) { return; }
+
+        var target = new URL(link.href, window.location.href);
+        if (target.origin !== window.location.origin) { return; }
+        if (target.protocol !== 'http:' && target.protocol !== 'https:') { return; }
+
+        event.preventDefault();
+
+        // Already on this page: on mobile just close the drawer.
+        if (target.pathname === window.location.pathname && target.search === window.location.search) {
+            closeMobileSidebar();
+            return;
+        }
+
+        // Record how far this page was scrolled, so Back returns to that spot.
+        history.replaceState({ pjax: true, y: window.scrollY }, '', window.location.href);
+        saveNavScroll();
+        navigate(target.href, {});
+    });
+
+    window.addEventListener('popstate', function (event) {
+        // Restored from the back/forward cache, or only the hash moved: the DOM
+        // already shows this URL, so leave it - and anything typed into it - alone.
+        if (withoutHash(window.location.href) === withoutHash(shownUrl)) { return; }
+
+        var state = event.state;
+        if (!state || !state.pjax) {
+            window.location.reload();
+            return;
+        }
+        navigate(window.location.href, { replaceState: true, scrollY: state.y || 0 });
+    });
+
+    history.replaceState({ pjax: true, y: 0 }, '', window.location.href);
+}());
+</script>
 {% endblock %}

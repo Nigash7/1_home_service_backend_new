@@ -1,0 +1,258 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}{{ vendor.display_name }} — Subscription{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="flex items-center gap-3 mb-6">
+        <a href="{% url 'subscribers_list' %}" class="text-gray-500 hover:text-gray-700">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+        </a>
+        <div class="min-w-0">
+            <h1 class="text-2xl font-bold text-gray-900 truncate">{{ vendor.display_name }}</h1>
+            <p class="text-gray-500 text-sm">
+                {{ vendor.user.phone_number|default:"No phone" }} ·
+                <a href="{% url 'vendor_detail' vendor.id %}" class="text-primary-600 hover:underline">Vendor profile</a>
+            </p>
+        </div>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    {% if pending_request %}
+    <div class="mb-6 bg-orange-50 border border-orange-200 rounded-xl p-5">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+            <div>
+                <div class="text-sm font-semibold text-orange-900">
+                    Asked for {{ pending_request.plan.name }}
+                    {% if pending_request.quoted_price > 0 %}· ₹{{ pending_request.quoted_price|floatformat:0 }}{% else %}· Free{% endif %}
+                </div>
+                <div class="text-xs text-orange-700 mt-0.5">
+                    {{ pending_request.created_at|date:"d M Y" }}
+                    {% if pending_request.note %} · “{{ pending_request.note }}”{% endif %}
+                </div>
+            </div>
+            <div class="flex gap-2">
+                <form method="post" action="{% url 'subscription_request_approve' pending_request.id %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="vendor">
+                    <button type="submit"
+                            class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-2 px-4 rounded-lg">
+                        Approve
+                    </button>
+                </form>
+                <form method="post" action="{% url 'subscription_request_reject' pending_request.id %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="vendor">
+                    <button type="submit"
+                            class="bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 text-sm font-semibold py-2 px-4 rounded-lg">
+                        Reject
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Current plan -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+        <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Current plan</h2>
+
+        {% if current %}
+        <div class="flex flex-wrap items-start justify-between gap-4">
+            <div>
+                <div class="text-xl font-bold text-gray-900">{{ current.plan.name }}</div>
+                <div class="text-sm text-gray-500 mt-0.5">
+                    {% if current.plan.is_free %}Free{% else %}₹{{ current.plan.price|floatformat:0 }}{% endif %}
+                    · {{ current.plan.get_billing_period_display }}
+                </div>
+                <div class="text-sm text-gray-700 mt-3">
+                    {{ current.start_date|date:"d M Y" }} →
+                    {% if current.end_date %}
+                        {{ current.end_date|date:"d M Y" }}
+                        <span class="{% if current.is_expiring_soon %}text-orange-600 font-semibold{% else %}text-gray-500{% endif %}">
+                            ({{ current.days_remaining }} day{{ current.days_remaining|pluralize }} left)
+                        </span>
+                    {% else %}
+                        <span class="text-gray-500">no expiry</span>
+                    {% endif %}
+                </div>
+                <div class="text-xs text-gray-500 mt-1">
+                    Recorded payment: ₹{{ current.amount_paid|floatformat:0 }}
+                    {% if current.payment_reference %} · ref {{ current.payment_reference }}{% endif %}
+                    {% if current.created_by %} · granted by {{ current.created_by.get_full_name|default:current.created_by.username }}{% endif %}
+                </div>
+                {% if current.notes %}
+                <p class="text-sm text-gray-600 mt-2">{{ current.notes }}</p>
+                {% endif %}
+            </div>
+
+            <div class="flex flex-col gap-2 w-full sm:w-auto">
+                {% if not current.is_lifetime and not queued %}
+                <form method="post" action="{% url 'subscription_renew' current.id %}">
+                    {% csrf_token %}
+                    <button type="submit"
+                            class="w-full bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2 px-5 rounded-lg whitespace-nowrap">
+                        Renew for another term
+                    </button>
+                </form>
+                {% endif %}
+                <form method="post" action="{% url 'subscription_cancel' current.id %}"
+                      onsubmit="return confirm('End this subscription now?')">
+                    {% csrf_token %}
+                    <input type="hidden" name="reason" value="Cancelled by admin">
+                    <button type="submit"
+                            class="w-full bg-red-50 hover:bg-red-100 text-red-600 text-sm font-semibold py-2 px-5 rounded-lg whitespace-nowrap">
+                        Cancel plan
+                    </button>
+                </form>
+            </div>
+        </div>
+        {% else %}
+        <p class="text-gray-500 text-sm">
+            This vendor is not on any plan. That does not stop them working — nothing on
+            the platform is gated on a subscription yet.
+        </p>
+        {% endif %}
+
+        {% if queued %}
+        <div class="mt-4 pt-4 border-t border-gray-100 text-sm text-gray-700">
+            <span class="bg-blue-100 text-blue-700 text-xs font-semibold px-2 py-0.5 rounded-full">Queued</span>
+            <strong>{{ queued.plan.name }}</strong> takes over on {{ queued.start_date|date:"d M Y" }}
+            {% if queued.end_date %}and runs to {{ queued.end_date|date:"d M Y" }}{% endif %}.
+            Moving this vendor to a different plan below cancels it.
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Assign / change plan -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+        <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
+            {% if current %}Move to a different plan{% else %}Put on a plan{% endif %}
+        </h2>
+
+        {% if assignable_plans %}
+        <form method="post" action="{% url 'subscription_assign' %}" class="space-y-4">
+            {% csrf_token %}
+            <input type="hidden" name="vendor" value="{{ vendor.id }}">
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Plan *</label>
+                    <select name="plan" required
+                            class="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                        <option value="">Select plan…</option>
+                        {% for plan in assignable_plans %}
+                        <option value="{{ plan.id }}">{{ plan.name }} — {% if plan.is_free %}Free{% else %}₹{{ plan.price|floatformat:0 }}{% endif %} / {{ plan.get_billing_period_display }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Start date</label>
+                    <input type="date" name="start_date" value="{{ today|date:'Y-m-d' }}"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">End date</label>
+                    <input type="date" name="end_date"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                    <p class="text-xs text-gray-500 mt-1">Leave empty to use the plan's own term.</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Amount paid (₹)</label>
+                    <input type="number" name="amount_paid" step="0.01" min="0" placeholder="Defaults to plan price"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Payment reference</label>
+                    <input type="text" name="payment_reference" placeholder="UPI ref / receipt no."
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Notes</label>
+                    <input type="text" name="notes"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                </div>
+            </div>
+
+            {% if current %}
+            <p class="text-xs text-gray-500">
+                {{ vendor.display_name }} is on <strong>{{ current.plan.name }}</strong> — that term
+                is ended as soon as this one starts.
+            </p>
+            {% endif %}
+
+            <button type="submit"
+                    class="bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2.5 px-6 rounded-lg">
+                {% if current %}Change plan{% else %}Assign plan{% endif %}
+            </button>
+        </form>
+        {% else %}
+        <p class="text-gray-500 text-sm">
+            No active plans to assign.
+            <a href="{% url 'subscription_plan_add' %}" class="text-primary-600 hover:underline">Create one first.</a>
+        </p>
+        {% endif %}
+    </div>
+
+    <!-- History -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100">
+            <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide">History</h2>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead>
+                    <tr class="bg-gray-50 text-left">
+                        <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Plan</th>
+                        <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Term</th>
+                        <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Paid</th>
+                        <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
+                        <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Granted by</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for sub in history %}
+                    <tr class="{% if sub.id == current.id %}bg-primary-50/40{% endif %}">
+                        <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ sub.plan.name }}</td>
+                        <td class="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
+                            {{ sub.start_date|date:"d M Y" }} →
+                            {% if sub.end_date %}{{ sub.end_date|date:"d M Y" }}{% else %}<span class="text-gray-400">no expiry</span>{% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-700">
+                            ₹{{ sub.amount_paid|floatformat:0 }}
+                            {% if sub.payment_reference %}<div class="text-xs text-gray-400">{{ sub.payment_reference }}</div>{% endif %}
+                        </td>
+                        <td class="px-4 py-3">
+                            <span class="text-xs font-semibold px-2 py-1 rounded-full
+                                {% if sub.status == 'ACTIVE' %}bg-green-100 text-green-700
+                                {% elif sub.status == 'EXPIRED' %}bg-gray-100 text-gray-600
+                                {% else %}bg-red-100 text-red-700{% endif %}">
+                                {{ sub.get_status_display }}
+                            </span>
+                            {% if sub.cancel_reason %}<div class="text-xs text-gray-400 mt-1">{{ sub.cancel_reason }}</div>{% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-500">
+                            {% if sub.created_by %}{{ sub.created_by.get_full_name|default:sub.created_by.username }}{% else %}—{% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="px-4 py-12 text-center text-gray-500">No subscription history yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

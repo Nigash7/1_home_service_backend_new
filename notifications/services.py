@@ -147,10 +147,10 @@ def notify_admins(event_key, **kwargs):
     kwargs.pop("admin_user", None)
     from .models import ADMIN_MODEL
 
-    AdminUser = apps.get_model(*ADMIN_MODEL.split("."))
-    qs = AdminUser.objects.all()
+    AdminModel = apps.get_model(*ADMIN_MODEL.split("."))
+    qs = AdminModel.objects.all()
     for field in ("is_active", "active"):
-        if hasattr(AdminUser, field):
+        if hasattr(AdminModel, field):
             qs = qs.filter(**{field: True})
             break
     return [notify(event_key, admin_user=a, **kwargs) for a in qs]

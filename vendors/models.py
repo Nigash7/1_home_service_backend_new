@@ -296,6 +296,23 @@ class Vendor(models.Model):
         ).count()
 
     @property
+    def active_subscription(self):
+        """
+        The vendor's live subscription, or None when they hold nothing.
+
+        Nothing is gated on this -- a vendor with no plan works exactly like a
+        vendor with one -- it is here so the dashboard and the vendor API
+        agree on what "subscribed" means.
+        """
+        from subscriptions.models import VendorSubscription
+        return VendorSubscription.objects.active_for(self)
+
+    @property
+    def subscription_plan_name(self):
+        subscription = self.active_subscription
+        return subscription.plan.name if subscription else ''
+
+    @property
     def computed_status(self):
         """
         Live availability:

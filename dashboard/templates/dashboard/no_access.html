@@ -1,0 +1,33 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}No access{% endblock %}
+
+{% block content %}
+<div class="max-w-xl mx-auto mt-8">
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center">
+        <div class="inline-flex items-center justify-center w-14 h-14 bg-amber-50 rounded-2xl mb-4">
+            <svg class="w-7 h-7 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+            </svg>
+        </div>
+
+        <h1 class="text-xl font-bold text-gray-900">This page is not part of your role</h1>
+        <p class="text-gray-500 mt-2 text-sm">
+            You are signed in as <strong>{{ admin_profile.full_name }}</strong>
+            ({{ admin_profile.role_display }}). An administrator can add this
+            access to your role.
+        </p>
+
+        {% if required_permission %}
+        <p class="text-xs text-gray-400 mt-4">
+            Access needed: <code class="bg-gray-100 px-1.5 py-0.5 rounded">{{ required_permission }}</code>
+        </p>
+        {% endif %}
+
+        <a href="{% url 'dashboard' %}"
+           class="inline-block mt-6 bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2.5 px-5 rounded-lg">
+            Back to dashboard
+        </a>
+    </div>
+</div>
+{% endblock %}

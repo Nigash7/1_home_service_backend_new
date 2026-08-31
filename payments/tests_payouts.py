@@ -22,6 +22,7 @@ from vendors.payout_services import name_match_score, normalise_name
 from . import services
 from .models import Payment, Payout
 from .payoutx import PayoutError
+from dashboard.testing import sign_in
 
 X_SETTINGS = dict(
     RAZORPAY_KEY_ID='rzp_test_KEY',
@@ -357,9 +358,7 @@ class DashboardPayoutTests(PayoutTestBase):
         super().setUp()
         self.admin = User.objects.create_user(
             username='a1', password='pw12345', is_staff=True)
-        session = self.client.session
-        session['admin_user_id'] = self.admin.id
-        session.save()
+        sign_in(self.client, self.admin)
 
     @patch('payments.payoutx.create_payout')
     def test_releasing_also_sends_the_transfer(self, create):

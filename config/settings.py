@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     'referrals',
     'branding',
     'tenders',
+    'subscriptions',
 ]
 
 MIDDLEWARE = [
@@ -96,6 +97,31 @@ SIMPLE_JWT = {
 # --- OTP / SMS settings ---
 # SMS_BACKEND: 'console' (free, dev only, prints OTP to terminal) or
 # 'fast2sms' / 'msg91' / 'twilio' for real SMS. See accounts/sms.py.
+
+# ---------- Dashboard sign-in security ----------
+# Sessions are only used by the admin dashboard and Django's own admin site;
+# the mobile apps authenticate with JWTs and are unaffected by any of this.
+
+# A signed-in dashboard session lasts a working day, then asks again.
+SESSION_COOKIE_AGE = config('SESSION_COOKIE_AGE', default=12 * 60 * 60, cast=int)
+SESSION_SAVE_EVERY_REQUEST = True  # the day is measured from last activity
+
+# Behind a proxy (Render, nginx) every request arrives from the load balancer,
+# so the per-IP part of the lockout would see one address for the whole world
+# and lock everyone out at once. The header is client-supplied and therefore
+# spoofable, which only lets an attacker dodge the IP counter -- never the
+# per-username one. Set to False when the app is exposed directly.
+ADMIN_LOGIN_TRUST_PROXY_HEADER = config(
+    'ADMIN_LOGIN_TRUST_PROXY_HEADER', default=True, cast=bool
+)
+
+# Cookies carrying a signed-in session must not travel in the clear. Off in
+# DEBUG so local development over plain http still works.
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
+
 SMS_BACKEND = config('SMS_BACKEND', default='console')
 OTP_EXPIRY_MINUTES = config('OTP_EXPIRY_MINUTES', default=5, cast=int)
 OTP_RESEND_COOLDOWN_SECONDS = config('OTP_RESEND_COOLDOWN_SECONDS', default=60, cast=int)
@@ -119,6 +145,10 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                # Puts the signed-in dashboard user and their permission set
+                # into every template, so the sidebar can hide what a role
+                # cannot open.
+                'dashboard.context_processors.admin_user',
             ],
         },
     },

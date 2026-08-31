@@ -1,0 +1,118 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}{% if is_edit %}Edit{% else %}Add{% endif %} Plan{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="flex items-center gap-3 mb-6">
+        <a href="{% url 'subscription_plans_list' %}" class="text-gray-500 hover:text-gray-700">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+        </a>
+        <h1 class="text-2xl font-bold text-gray-900">
+            {% if is_edit %}Edit Plan{% else %}Add Plan{% endif %}
+        </h1>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <form method="post" class="space-y-5">
+            {% csrf_token %}
+
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Plan Name *</label>
+                <input type="text" name="name" required
+                       value="{% if is_edit %}{{ plan.name }}{% endif %}"
+                       placeholder="e.g. Free, Silver, Gold"
+                       class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                <p class="text-xs text-gray-500 mt-1">Must be unique.</p>
+            </div>
+
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Description</label>
+                <input type="text" name="description"
+                       value="{% if is_edit %}{{ plan.description }}{% endif %}"
+                       placeholder="One-line pitch shown under the plan name"
+                       class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Amount (₹) *</label>
+                    <input type="number" name="price" step="0.01" min="0" required
+                           value="{% if is_edit %}{{ plan.price }}{% else %}0{% endif %}"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                    <p class="text-xs text-gray-500 mt-1">0 = a free plan.</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Billing Period *</label>
+                    <select name="billing_period"
+                            class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                        {% for value, label in billing_periods %}
+                        <option value="{{ value }}" {% if is_edit and plan.billing_period == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <p class="text-xs text-gray-500 mt-1">Sets how long a term runs.</p>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Features</label>
+                <textarea name="features" rows="5"
+                          placeholder="One benefit per line, e.g.&#10;Unlimited tender bids&#10;Priority job assignment&#10;Featured on the Pro Vendors page"
+                          class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">{% if is_edit %}{{ plan.features }}{% endif %}</textarea>
+                <p class="text-xs text-gray-500 mt-1">One per line. Shown as bullets on the plan card.</p>
+            </div>
+
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Sort Order</label>
+                <input type="number" name="sort_order" min="0"
+                       value="{% if is_edit %}{{ plan.sort_order }}{% else %}0{% endif %}"
+                       class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                <p class="text-xs text-gray-500 mt-1">Lower number = shown first.</p>
+            </div>
+
+            <div class="space-y-3 pt-2">
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" name="is_active"
+                           {% if is_edit and plan.is_active or not is_edit %}checked{% endif %}
+                           class="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                    <div>
+                        <div class="text-sm font-semibold text-gray-700">Active</div>
+                        <div class="text-xs text-gray-500">Can be assigned to vendors</div>
+                    </div>
+                </label>
+
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" name="is_default"
+                           {% if is_edit and plan.is_default %}checked{% endif %}
+                           class="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                    <div>
+                        <div class="text-sm font-semibold text-gray-700">Default plan</div>
+                        <div class="text-xs text-gray-500">The tier new vendors land on. Only one plan can hold this — ticking it here takes it off whichever plan has it now.</div>
+                    </div>
+                </label>
+            </div>
+
+            <div class="flex gap-3 pt-4 border-t border-gray-100">
+                <a href="{% url 'subscription_plans_list' %}"
+                   class="flex-1 text-center bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold py-2.5 rounded-lg">
+                    Cancel
+                </a>
+                <button type="submit"
+                        class="flex-1 bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2.5 rounded-lg">
+                    {% if is_edit %}Save Changes{% else %}Create Plan{% endif %}
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

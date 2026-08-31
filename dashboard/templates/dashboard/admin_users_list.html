@@ -1,87 +1,132 @@
 {% extends "dashboard/_layout.html" %}
 
-{% block title %}Admin Users{% endblock %}
+{% block title %}Dashboard Users{% endblock %}
 
 {% block content %}
-<div class="max-w-5xl mx-auto">
+<div class="max-w-6xl mx-auto">
     <div class="flex justify-between items-start mb-6">
         <div>
-            <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">Admin Users</h1>
-            <p class="text-gray-500 mt-1">Manage dashboard access.</p>
+            <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">Dashboard Users</h1>
+            <p class="text-gray-500 mt-1">
+                Everyone who can sign in to this panel, and the role each one holds.
+            </p>
         </div>
         <a href="{% url 'admin_user_add' %}"
            class="bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2 px-4 rounded-lg flex items-center gap-2 shadow-sm">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
             </svg>
-            Add Admin
+            Add User
         </a>
     </div>
 
     {% if messages %}
         {% for message in messages %}
-            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm
+                {% if message.tags == 'error' %}bg-red-50 text-red-700
+                {% elif message.tags == 'warning' %}bg-amber-50 text-amber-800
+                {% else %}bg-green-50 text-green-700{% endif %}">
                 {{ message }}
             </div>
         {% endfor %}
     {% endif %}
 
-    <div class="space-y-3">
-        {% for a in admins %}
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition">
-            <div class="flex items-start justify-between">
-                <div class="flex items-center gap-4 flex-1">
-                    <div class="w-12 h-12 bg-primary-600 rounded-full flex items-center justify-center text-white font-bold">
-                        {{ a.full_name|slice:":1"|upper }}
-                    </div>
-                    <div class="flex-1">
-                        <div class="flex items-center gap-2 mb-1 flex-wrap">
-                            <h2 class="text-base font-bold text-gray-900">{{ a.full_name }}</h2>
-                            {% if a.role == 'SUPER_ADMIN' %}
-                                <span class="bg-purple-100 text-purple-700 text-xs font-semibold px-2 py-0.5 rounded-full">Super Admin</span>
-                            {% else %}
-                                <span class="bg-gray-100 text-gray-700 text-xs font-semibold px-2 py-0.5 rounded-full">Staff</span>
-                            {% endif %}
-                            {% if a.is_active %}
-                                <span class="bg-green-100 text-green-700 text-xs font-semibold px-2 py-0.5 rounded-full">Active</span>
-                            {% else %}
-                                <span class="bg-red-100 text-red-700 text-xs font-semibold px-2 py-0.5 rounded-full">Inactive</span>
-                            {% endif %}
-                            {% if a.id == admin_user.id %}
-                                <span class="bg-blue-100 text-blue-700 text-xs font-semibold px-2 py-0.5 rounded-full">You</span>
-                            {% endif %}
-                        </div>
-                        <div class="text-sm text-gray-500">{{ a.email }}</div>
-                        {% if a.last_login %}
-                            <div class="text-xs text-gray-400 mt-1">Last login: {{ a.last_login|date:"M d, Y H:i" }}</div>
-                        {% else %}
-                            <div class="text-xs text-gray-400 mt-1">Never logged in</div>
-                        {% endif %}
-                    </div>
-                </div>
-                <div class="flex gap-2 ml-4">
-                    <a href="{% url 'admin_user_edit' a.id %}"
-                       class="text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 px-3 rounded-lg">
-                        Edit
-                    </a>
-                    {% if a.id != admin_user.id %}
-                    <form method="post" action="{% url 'admin_user_delete' a.id %}"
-                          onsubmit="return confirm('Delete this admin?')" class="inline">
-                        {% csrf_token %}
-                        <button type="submit"
-                                class="text-xs font-semibold bg-red-50 hover:bg-red-100 text-red-600 py-2 px-3 rounded-lg">
-                            Delete
-                        </button>
-                    </form>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-        {% empty %}
-        <div class="bg-white rounded-2xl border border-gray-100 p-12 text-center">
-            <p class="text-gray-500">No admins yet.</p>
-        </div>
-        {% endfor %}
+    {% if not role_count %}
+    <div class="mb-6 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
+        There are no active roles yet. Everyone except a super admin needs one —
+        <a href="{% url 'roles_list' %}" class="font-semibold underline">create a role first</a>.
     </div>
+    {% endif %}
+
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                    <tr>
+                        <th class="text-left font-semibold px-6 py-3">Name</th>
+                        <th class="text-left font-semibold px-6 py-3">Username</th>
+                        <th class="text-left font-semibold px-6 py-3">Role</th>
+                        <th class="text-left font-semibold px-6 py-3">Status</th>
+                        <th class="text-left font-semibold px-6 py-3">Last signed in</th>
+                        <th class="text-right font-semibold px-6 py-3">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for profile in profiles %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-9 h-9 bg-primary-600 rounded-full flex items-center justify-center text-white font-semibold text-xs flex-shrink-0">
+                                    {{ profile.full_name|slice:":1"|upper }}
+                                </div>
+                                <div class="min-w-0">
+                                    <div class="font-medium text-gray-900 truncate">{{ profile.full_name }}</div>
+                                    {% if profile.user.email %}
+                                        <div class="text-xs text-gray-400 truncate">{{ profile.user.email }}</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4">
+                            <code class="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs">{{ profile.user.username }}</code>
+                        </td>
+                        <td class="px-6 py-4">
+                            {% if profile.is_super_admin %}
+                                <span class="bg-primary-50 text-primary-700 text-xs font-semibold px-2 py-1 rounded-full">Super Admin</span>
+                            {% elif profile.role %}
+                                <span class="text-gray-700">{{ profile.role.name }}</span>
+                                {% if not profile.role.is_active %}
+                                    <span class="block text-xs text-amber-600">role is switched off</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-xs text-amber-600">No role — cannot sign in</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4">
+                            {% if profile.is_active %}
+                                <span class="bg-green-50 text-green-700 text-xs font-medium px-2 py-1 rounded-full">Active</span>
+                            {% else %}
+                                <span class="bg-gray-100 text-gray-500 text-xs font-medium px-2 py-1 rounded-full">Disabled</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 text-gray-500">
+                            {% if profile.last_login_at %}
+                                {{ profile.last_login_at|date:"j M Y, g:i a" }}
+                            {% else %}
+                                <span class="text-gray-400">Never</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4">
+                            <div class="flex items-center justify-end gap-3">
+                                <a href="{% url 'admin_user_edit' profile.id %}"
+                                   class="text-primary-600 hover:text-primary-700 font-medium">Edit</a>
+                                {% if profile.user_id != admin_user.id %}
+                                <form method="post" action="{% url 'admin_user_delete' profile.id %}"
+                                      onsubmit="return confirm('Remove {{ profile.full_name }}? Their sign-in stops working immediately.');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="text-red-600 hover:text-red-700 font-medium">Remove</button>
+                                </form>
+                                {% else %}
+                                    <span class="text-xs text-gray-400">You</span>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="px-6 py-10 text-center text-gray-500">
+                            No dashboard users yet.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <p class="text-xs text-gray-400 mt-4">
+        Passwords are stored hashed and can never be read back — to help someone
+        who is locked out, open their row and set a new one.
+    </p>
 </div>
 {% endblock %}

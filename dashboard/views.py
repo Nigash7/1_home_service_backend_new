@@ -1,11 +1,11 @@
-import random
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import get_user_model
-from django.core.mail import send_mail
+from django.contrib.auth import authenticate, get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404, render, redirect
 from django.http import JsonResponse
@@ -26,8 +26,11 @@ from tenders import notifications as tender_notify
 from vendors.models import Vendor, VendorDocument
 from services.models import ServiceCategory  # adjust to your actual app name
 
+from . import security
 from .notifications import notify_customer
-from .decorators import admin_login_required
+from .decorators import SESSION_USER_KEY, admin_login_required
+from .models import AdminLoginAttempt, AdminProfile, AdminRole
+from .permissions import ALL_PERMISSIONS, PERMISSION_GROUPS, clean_permissions
 from services.models import ServiceCategory, SubCategory, Service
 from customers.models import Customer
 from vendors.distance import haversine_distance
@@ -37,101 +40,116 @@ from vendors.round_robin import get_rotation_queue, pick_next_vendor, mark_assig
 
 User = get_user_model()
 
-OTP_SESSION_KEY = 'dashboard_otp'
-
-
-def _generate_and_send_otp(request, user):
-    otp = f"{random.randint(100000, 999999)}"
-    request.session[OTP_SESSION_KEY] = {
-        'code': otp,
-        'user_id': user.id,
-        'expires_at': (timezone.now() + timedelta(minutes=settings.OTP_EXPIRY_MINUTES)).isoformat(),
-        'last_sent_at': timezone.now().isoformat(),
-    }
-    send_mail(
-        subject='Your Admin Login OTP',
-        message=f'Your OTP code is {otp}. It expires in {settings.OTP_EXPIRY_MINUTES} minutes.',
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[user.email],
-    )
-
-
-# ---------- Login ----------
+# ---------- Sign in ----------
 
 def login_view(request):
-    if request.method == 'POST':
-        email = request.POST.get('email', '').strip().lower()
+    """
+    Username and password, with the brute-force lock checked in front of it.
 
-        try:
-            user = User.objects.get(email__iexact=email, is_staff=True)
-        except User.DoesNotExist:
-            messages.error(request, 'No admin account found with that email.')
-            return render(request, 'dashboard/login.html')
-
-        _generate_and_send_otp(request, user)
-        request.session['pending_email'] = email
-        messages.success(request, 'OTP sent to your email.')
-        return redirect('dashboard_verify_otp')
-
-    return render(request, 'dashboard/login.html')
-
-
-# ---------- Verify OTP ----------
-
-def verify_otp_view(request):
-    otp_data = request.session.get(OTP_SESSION_KEY)
-
-    if not otp_data:
-        messages.error(request, 'Please log in first.')
-        return redirect('dashboard_login')
-
-    if request.method == 'POST':
-        entered_otp = request.POST.get('code', '').strip()
-        expires_at = timezone.datetime.fromisoformat(otp_data['expires_at'])
-
-        if timezone.now() > expires_at:
-            messages.error(request, 'OTP expired. Please request a new one.')
-            return redirect('dashboard_login')
-
-        if entered_otp != otp_data['code']:
-            messages.error(request, 'Invalid OTP.')
-            return render(request, 'dashboard/verify_otp.html')
-
-        request.session['admin_user_id'] = otp_data['user_id']
-        del request.session[OTP_SESSION_KEY]
-        messages.success(request, 'Logged in successfully.')
+    Two things the wording does on purpose: the failure message is identical
+    whether the username is unknown or the password is wrong, so the form
+    never confirms that an account exists; and the lock is consulted before
+    the password is looked at, so a locked account costs an attacker a
+    rejected request rather than a password comparison.
+    """
+    if request.session.get(SESSION_USER_KEY):
         return redirect('dashboard')
 
-    return render(request, 'dashboard/verify_otp.html')
+    if request.method != 'POST':
+        return render(request, 'dashboard/login.html')
+
+    username = request.POST.get('username', '').strip()
+    password = request.POST.get('password', '')
+
+    lock = security.lock_status(username, security.client_ip(request))
+    if lock.locked:
+        security.record_attempt(
+            request, username, AdminLoginAttempt.Outcome.LOCKED_OUT,
+        )
+        messages.error(
+            request,
+            f'Too many failed sign-in attempts. Try again in {lock.wait_text}.',
+        )
+        return render(request, 'dashboard/login.html', {'username': username})
+
+    if not username or not password:
+        messages.error(request, 'Enter your username and password.')
+        return render(request, 'dashboard/login.html', {'username': username})
+
+    # authenticate() hashes a throwaway password when the user does not exist,
+    # so an unknown username takes as long to reject as a wrong password and
+    # cannot be picked out by timing it.
+    user = authenticate(request, username=username, password=password)
+
+    if user is None:
+        exists = User.objects.filter(username=username).exists()
+        security.record_attempt(request, username, (
+            AdminLoginAttempt.Outcome.BAD_PASSWORD if exists
+            else AdminLoginAttempt.Outcome.UNKNOWN_USER
+        ))
+        messages.error(request, 'Incorrect username or password.')
+
+        remaining = security.attempts_left(username)
+        if 0 < remaining <= 2:
+            messages.warning(
+                request,
+                f'{remaining} attempt{"" if remaining == 1 else "s"} left '
+                'before this account is locked.',
+            )
+        return render(request, 'dashboard/login.html', {'username': username})
+
+    profile = _dashboard_profile(user)
+
+    if profile is None or not profile.can_sign_in:
+        # The password was right, so this is recorded too: without it, a valid
+        # non-admin login could be replayed at this form forever, and every
+        # replay costs the server a password hash.
+        security.record_attempt(
+            request, username, AdminLoginAttempt.Outcome.NO_ACCESS,
+        )
+        messages.error(
+            request,
+            'This account does not have dashboard access. '
+            'Contact an administrator.',
+        )
+        return render(request, 'dashboard/login.html', {'username': username})
+
+    security.record_attempt(request, username, AdminLoginAttempt.Outcome.SUCCESS)
+
+    # A fresh session id, so a cookie planted before sign-in cannot be reused
+    # after it.
+    request.session.cycle_key()
+    request.session[SESSION_USER_KEY] = user.id
+    AdminProfile.objects.filter(pk=profile.pk).update(last_login_at=timezone.now())
+
+    messages.success(request, f'Welcome back, {profile.full_name}.')
+    return redirect('dashboard')
 
 
-# ---------- Resend OTP ----------
+def _dashboard_profile(user):
+    """
+    The user's dashboard profile, creating one for a bare superuser.
 
-def resend_otp_view(request):
-    otp_data = request.session.get(OTP_SESSION_KEY)
-    if not otp_data:
-        messages.error(request, 'Please log in first.')
-        return redirect('dashboard_login')
-
-    last_sent = timezone.datetime.fromisoformat(otp_data['last_sent_at'])
-    cooldown = timedelta(seconds=settings.OTP_RESEND_COOLDOWN_SECONDS)
-
-    if timezone.now() < last_sent + cooldown:
-        wait = int((last_sent + cooldown - timezone.now()).total_seconds())
-        messages.error(request, f'Please wait {wait}s before resending.')
-        return redirect('dashboard_verify_otp')
-
-    user = User.objects.get(id=otp_data['user_id'])
-    _generate_and_send_otp(request, user)
-    messages.success(request, 'OTP resent.')
-    return redirect('dashboard_verify_otp')
+    Without this the account made by `createsuperuser` -- the one that has to
+    set the whole panel up -- would be the only account unable to get in.
+    """
+    profile = (
+        AdminProfile.objects.select_related('role').filter(user=user).first()
+    )
+    if profile is None and user.is_superuser:
+        profile = AdminProfile.objects.create(
+            user=user,
+            full_name=user.get_full_name() or user.username,
+            is_super_admin=True,
+        )
+    return profile
 
 
-# ---------- Logout ----------
+# ---------- Sign out ----------
 
 def logout_view(request):
     request.session.flush()
-    messages.success(request, 'Logged out.')
+    messages.success(request, 'Signed out.')
     return redirect('dashboard_login')
 
 
@@ -507,6 +525,7 @@ def vendor_detail_view(request, vendor_id):
         'payout_account': getattr(vendor, 'bank_account', None),
         'bank_changes': vendor.bank_account_changes.all()[:5],
         'payouts_enabled': payoutx.is_enabled(),
+        'subscription': vendor.active_subscription,
     }
     return render(request, 'dashboard/vendor_detail.html', context)
 
@@ -2527,120 +2546,540 @@ def customer_detail_view(request, customer_id):
     return render(request, 'dashboard/customer_detail.html', context)
 
 
-# ================= ADMIN USERS MANAGEMENT =================
+# ================= ROLES =================
+#
+# A role is a name plus a list of accesses. Nothing in the code cares what a
+# role is called, so an admin can invent as many as the business needs.
+#
+# One rule runs through this whole section: nobody can hand out an access they
+# do not hold themselves. Without it, `system.staff` alone would be enough to
+# build a role with every permission and step into it -- which would make the
+# whole catalogue decorative.
+
+
+def _grantable(request):
+    """The accesses this admin is allowed to hand to someone else."""
+    if request.admin_profile.is_super_admin:
+        return set(ALL_PERMISSIONS)
+    return set(request.admin_perms)
+
+
+def _permission_form_groups(selected, grantable):
+    """PERMISSION_GROUPS shaped for the checkbox form."""
+    selected = set(selected or ())
+    return [
+        {
+            'label': group,
+            'entries': [
+                {
+                    'code': code,
+                    'label': label,
+                    'help': help_text,
+                    'checked': code in selected,
+                    'allowed': code in grantable,
+                }
+                for code, label, help_text in entries
+            ],
+        }
+        for group, entries in PERMISSION_GROUPS
+    ]
+
+
+def _role_initial(request, role=None):
+    """
+    What the form fields should show.
+
+    Resolved here rather than in the template: a template that falls back
+    across `posted` and `role` blows up on whichever of the two is absent,
+    which is every add form and every failed save.
+    """
+    if request.method == 'POST':
+        return {
+            'name': request.POST.get('name', ''),
+            'description': request.POST.get('description', ''),
+            'is_active': request.POST.get('is_active') == 'on',
+        }
+    if role is not None:
+        return {
+            'name': role.name,
+            'description': role.description,
+            'is_active': role.is_active,
+        }
+    return {'name': '', 'description': '', 'is_active': True}
+
+
+def _role_form(request, role=None):
+    """Shared add/edit handler. Returns a response, or None to keep rendering."""
+    grantable = _grantable(request)
+
+    if role is not None:
+        beyond = role.permission_set - grantable
+        if beyond:
+            messages.error(
+                request,
+                'This role holds accesses you do not have yourself, so only a '
+                'super admin can edit it.',
+            )
+            return redirect('roles_list')
+
+    if request.method != 'POST':
+        return None
+
+    name = request.POST.get('name', '').strip()
+    description = request.POST.get('description', '').strip()
+    is_active = request.POST.get('is_active') == 'on'
+    submitted = set(request.POST.getlist('permissions'))
+
+    clash = AdminRole.objects.filter(name__iexact=name)
+    if role is not None:
+        clash = clash.exclude(pk=role.pk)
+
+    if not name:
+        messages.error(request, 'Give the role a name.')
+        return None
+    if clash.exists():
+        messages.error(request, f'A role called "{name}" already exists.')
+        return None
+
+    refused = submitted - grantable
+    granted = clean_permissions(submitted & grantable)
+
+    if not granted:
+        messages.error(request, 'Pick at least one access for this role.')
+        return None
+
+    if role is None:
+        role = AdminRole()
+    role.name = name
+    role.description = description
+    role.is_active = is_active
+    role.permissions = granted
+    role.save()
+
+    if refused:
+        messages.warning(
+            request,
+            f'{len(refused)} access(es) were not granted because you do not '
+            'hold them yourself.',
+        )
+    messages.success(request, f'Role "{role.name}" saved.')
+    return redirect('roles_list')
+
+
+@admin_login_required
+def roles_list_view(request):
+    roles = AdminRole.objects.annotate(
+        staff_total=models.Count('staff', distinct=True),
+    ).order_by('name')
+
+    return render(request, 'dashboard/roles_list.html', {
+        'active_page': 'roles',
+        'roles': roles,
+    })
+
+
+@admin_login_required
+def role_add_view(request):
+    response = _role_form(request)
+    if response is not None:
+        return response
+
+    return render(request, 'dashboard/role_form.html', {
+        'active_page': 'roles',
+        'is_edit': False,
+        'form': _role_initial(request),
+        'permission_groups': _permission_form_groups(
+            request.POST.getlist('permissions'), _grantable(request),
+        ),
+    })
+
+
+@admin_login_required
+def role_edit_view(request, role_id):
+    role = get_object_or_404(AdminRole, id=role_id)
+
+    response = _role_form(request, role)
+    if response is not None:
+        return response
+
+    selected = (
+        request.POST.getlist('permissions') if request.method == 'POST'
+        else role.permissions
+    )
+    return render(request, 'dashboard/role_form.html', {
+        'active_page': 'roles',
+        'is_edit': True,
+        'role': role,
+        'form': _role_initial(request, role),
+        'permission_groups': _permission_form_groups(selected, _grantable(request)),
+    })
+
+
+@admin_login_required
+def role_delete_view(request, role_id):
+    if request.method != 'POST':
+        return redirect('roles_list')
+
+    role = get_object_or_404(AdminRole, id=role_id)
+
+    if role.permission_set - _grantable(request):
+        messages.error(request, 'Only a super admin can delete that role.')
+        return redirect('roles_list')
+
+    in_use = role.staff.count()
+    if in_use:
+        messages.error(
+            request,
+            f'"{role.name}" is still assigned to {in_use} user(s). Move them '
+            'to another role first, or switch the role off instead.',
+        )
+        return redirect('roles_list')
+
+    name = role.name
+    role.delete()
+    messages.success(request, f'Role "{name}" deleted.')
+    return redirect('roles_list')
+
+
+# ================= DASHBOARD USERS =================
+
+
+def _may_edit_target(request, profile):
+    """
+    A super admin's account is only editable by another super admin.
+
+    `system.staff` is meant for day-to-day user admin, not for reaching into
+    the accounts that granted it.
+    """
+    return request.admin_profile.is_super_admin or not profile.is_super_admin
+
+
+def _assignable_roles(request):
+    """Roles this admin may put someone into -- never one stronger than theirs."""
+    grantable = _grantable(request)
+    return [
+        role for role in AdminRole.objects.order_by('name')
+        if not (role.permission_set - grantable)
+    ]
+
+
+def _check_password(password, confirm, user=None):
+    """Validation messages for a new password, empty when it is acceptable."""
+    if not password:
+        return ['Enter a password.']
+    if password != confirm:
+        return ['The two passwords do not match.']
+    try:
+        validate_password(password, user=user)
+    except ValidationError as exc:
+        return list(exc.messages)
+    return []
+
+
+def _staff_initial(request, profile=None):
+    """The values the user form should show -- see `_role_initial`."""
+    if request.method == 'POST':
+        return {
+            'full_name': request.POST.get('full_name', ''),
+            'email': request.POST.get('email', ''),
+            'username': request.POST.get('username', ''),
+            'role_id': request.POST.get('role', ''),
+            'is_active': request.POST.get('is_active') == 'on',
+            'is_super_admin': request.POST.get('is_super_admin') == 'on',
+        }
+    if profile is not None:
+        return {
+            'full_name': profile.full_name,
+            'email': profile.user.email,
+            'username': profile.user.username,
+            'role_id': str(profile.role_id or ''),
+            'is_active': profile.is_active,
+            'is_super_admin': profile.is_super_admin,
+        }
+    return {
+        'full_name': '', 'email': '', 'username': '', 'role_id': '',
+        'is_active': True, 'is_super_admin': False,
+    }
+
 
 @admin_login_required
 def admin_users_list_view(request):
-    # Only super admins can see this
-    if not request.admin_user.is_super_admin:
-        messages.error(request, 'Only super admins can manage admin users.')
-        return redirect('dashboard')
+    profiles = (
+        AdminProfile.objects
+        .select_related('user', 'role')
+        .order_by('-is_super_admin', 'full_name')
+    )
 
-    admins = AdminUser.objects.order_by('-created_at')
-
-    context = {
-        'admin_user': request.admin_user,
+    return render(request, 'dashboard/admin_users_list.html', {
         'active_page': 'admin_users',
-        'admins': admins,
-    }
-    return render(request, 'dashboard/admin_users_list.html', context)
+        'profiles': profiles,
+        'role_count': AdminRole.objects.filter(is_active=True).count(),
+    })
 
 
 @admin_login_required
 def admin_user_add_view(request):
-    if not request.admin_user.is_super_admin:
-        messages.error(request, 'Only super admins can manage admin users.')
-        return redirect('dashboard')
+    roles = _assignable_roles(request)
 
     if request.method == 'POST':
-        email = request.POST.get('email', '').strip().lower()
+        username = request.POST.get('username', '').strip()
         full_name = request.POST.get('full_name', '').strip()
-        role = request.POST.get('role', 'STAFF')
+        email = request.POST.get('email', '').strip().lower()
+        password = request.POST.get('password', '')
+        confirm = request.POST.get('confirm_password', '')
+        role_id = request.POST.get('role', '')
         is_active = request.POST.get('is_active') == 'on'
+        make_super = (
+            request.POST.get('is_super_admin') == 'on'
+            and request.admin_profile.is_super_admin
+        )
 
-        if not email or not full_name:
-            messages.error(request, 'Email and name are required.')
-        elif AdminUser.objects.filter(email__iexact=email).exists():
-            messages.error(request, 'An admin with this email already exists.')
+        errors = []
+        if not username:
+            errors.append('Enter a username.')
+        elif User.objects.filter(username__iexact=username).exists():
+            errors.append(f'The username "{username}" is already taken.')
+        if not full_name:
+            errors.append('Enter the person\'s name.')
+        if email and User.objects.filter(email__iexact=email).exists():
+            errors.append('Another account already uses that email address.')
+
+        role = None
+        if not make_super:
+            role = next((r for r in roles if str(r.id) == role_id), None)
+            if role is None:
+                errors.append('Choose a role for this user.')
+
+        errors += _check_password(password, confirm)
+
+        if errors:
+            for error in errors:
+                messages.error(request, error)
         else:
-            AdminUser.objects.create(
-                email=email,
-                full_name=full_name,
-                role=role,
-                is_active=is_active,
-                can_manage_bookings=request.POST.get('can_manage_bookings') == 'on',
-                can_manage_vendors=request.POST.get('can_manage_vendors') == 'on',
-                can_manage_customers=request.POST.get('can_manage_customers') == 'on',
-                can_manage_services=request.POST.get('can_manage_services') == 'on',
-                can_manage_content=request.POST.get('can_manage_content') == 'on',
-                can_manage_discounts=request.POST.get('can_manage_discounts') == 'on',
-                can_view_reports=request.POST.get('can_view_reports') == 'on',
+            with transaction.atomic():
+                user = User.objects.create_user(
+                    username=username,
+                    email=email or '',
+                    password=password,
+                    role=User.Role.ADMIN,
+                    # Deliberately not is_staff: that flag opens Django's own
+                    # admin site, which is a separate door this panel's roles
+                    # say nothing about.
+                    is_staff=False,
+                )
+                AdminProfile.objects.create(
+                    user=user,
+                    full_name=full_name,
+                    role=role,
+                    is_super_admin=make_super,
+                    is_active=is_active,
+                    created_by=request.admin_user,
+                )
+            messages.success(
+                request,
+                f'{full_name} can now sign in with the username "{username}".',
             )
-            messages.success(request, f'Admin "{full_name}" created.')
             return redirect('admin_users_list')
 
     return render(request, 'dashboard/admin_user_form.html', {
-        'admin_user': request.admin_user,
         'active_page': 'admin_users',
         'is_edit': False,
+        'roles': roles,
+        'form': _staff_initial(request),
+        'can_make_super': request.admin_profile.is_super_admin,
     })
 
 
 @admin_login_required
 def admin_user_edit_view(request, user_id):
-    if not request.admin_user.is_super_admin:
-        messages.error(request, 'Only super admins can manage admin users.')
-        return redirect('dashboard')
+    profile = get_object_or_404(
+        AdminProfile.objects.select_related('user', 'role'), id=user_id,
+    )
+    if not _may_edit_target(request, profile):
+        messages.error(request, 'Only a super admin can edit that account.')
+        return redirect('admin_users_list')
 
-    target = get_object_or_404(AdminUser, id=user_id)
+    roles = _assignable_roles(request)
+    is_self = profile.user_id == request.admin_user.id
 
     if request.method == 'POST':
         full_name = request.POST.get('full_name', '').strip()
-        role = request.POST.get('role', 'STAFF')
+        email = request.POST.get('email', '').strip().lower()
+        role_id = request.POST.get('role', '')
         is_active = request.POST.get('is_active') == 'on'
+        make_super = (
+            request.POST.get('is_super_admin') == 'on'
+            and request.admin_profile.is_super_admin
+        )
 
+        errors = []
         if not full_name:
-            messages.error(request, 'Name is required.')
+            errors.append('Enter the person\'s name.')
+        if email and User.objects.filter(email__iexact=email).exclude(
+            pk=profile.user_id
+        ).exists():
+            errors.append('Another account already uses that email address.')
+
+        role = None
+        if not make_super:
+            role = next((r for r in roles if str(r.id) == role_id), None)
+            if role is None:
+                errors.append('Choose a role for this user.')
+
+        # Signing away your own access mid-edit would leave the panel with one
+        # fewer super admin and no way back in if it was the last one.
+        if is_self and profile.is_super_admin and not make_super:
+            errors.append('You cannot remove your own super admin access.')
+        if is_self and not is_active:
+            errors.append('You cannot switch off your own account.')
+
+        if errors:
+            for error in errors:
+                messages.error(request, error)
         else:
-            target.full_name = full_name
-            target.role = role
-            target.is_active = is_active
-            target.can_manage_bookings = request.POST.get('can_manage_bookings') == 'on'
-            target.can_manage_vendors = request.POST.get('can_manage_vendors') == 'on'
-            target.can_manage_customers = request.POST.get('can_manage_customers') == 'on'
-            target.can_manage_services = request.POST.get('can_manage_services') == 'on'
-            target.can_manage_content = request.POST.get('can_manage_content') == 'on'
-            target.can_manage_discounts = request.POST.get('can_manage_discounts') == 'on'
-            target.can_view_reports = request.POST.get('can_view_reports') == 'on'
-            target.save()
-            messages.success(request, 'Admin user updated.')
+            with transaction.atomic():
+                profile.full_name = full_name
+                profile.role = role
+                profile.is_super_admin = make_super
+                profile.is_active = is_active
+                profile.save()
+
+                profile.user.email = email or ''
+                profile.user.is_active = is_active
+                profile.user.save(update_fields=['email', 'is_active'])
+
+            messages.success(request, f'{full_name} updated.')
             return redirect('admin_users_list')
 
     return render(request, 'dashboard/admin_user_form.html', {
-        'admin_user': request.admin_user,
         'active_page': 'admin_users',
-        'target_user': target,
         'is_edit': True,
+        'profile': profile,
+        'roles': roles,
+        'form': _staff_initial(request, profile),
+        'is_self': is_self,
+        'can_make_super': request.admin_profile.is_super_admin,
     })
 
 
 @admin_login_required
-def admin_user_delete_view(request, user_id):
-    if not request.admin_user.is_super_admin:
+def admin_user_password_view(request, user_id):
+    """Set a new password for someone. Admins never see the old one."""
+    profile = get_object_or_404(
+        AdminProfile.objects.select_related('user'), id=user_id,
+    )
+    if not _may_edit_target(request, profile):
+        messages.error(request, 'Only a super admin can do that.')
         return redirect('admin_users_list')
+
+    if request.method != 'POST':
+        return redirect('admin_user_edit', user_id=profile.id)
+
+    password = request.POST.get('password', '')
+    confirm = request.POST.get('confirm_password', '')
+
+    errors = _check_password(password, confirm, user=profile.user)
+    if errors:
+        for error in errors:
+            messages.error(request, error)
+        return redirect('admin_user_edit', user_id=profile.id)
+
+    profile.user.set_password(password)
+    profile.user.save(update_fields=['password'])
+
+    # A fresh password should also end the guessing that prompted it.
+    security.clear_failures(security.SCOPE_USERNAME, profile.user.username)
+
+    messages.success(request, f'New password set for {profile.full_name}.')
+    return redirect('admin_users_list')
+
+
+@admin_login_required
+def admin_user_delete_view(request, user_id):
     if request.method != 'POST':
         return redirect('admin_users_list')
 
-    target = get_object_or_404(AdminUser, id=user_id)
-
-    if target.id == request.admin_user.id:
-        messages.error(request, "You can't delete your own account.")
+    profile = get_object_or_404(
+        AdminProfile.objects.select_related('user'), id=user_id,
+    )
+    if not _may_edit_target(request, profile):
+        messages.error(request, 'Only a super admin can delete that account.')
         return redirect('admin_users_list')
 
-    name = target.full_name
-    target.delete()
-    messages.success(request, f'Admin "{name}" deleted.')
+    if profile.user_id == request.admin_user.id:
+        messages.error(request, 'You cannot delete your own account.')
+        return redirect('admin_users_list')
+
+    if profile.is_super_admin and AdminProfile.objects.filter(
+        is_super_admin=True, is_active=True,
+    ).count() <= 1:
+        messages.error(request, 'This is the last super admin -- keep at least one.')
+        return redirect('admin_users_list')
+
+    name = profile.full_name
+    with transaction.atomic():
+        user = profile.user
+        profile.delete()
+        # The login has no purpose without the profile, and leaving it behind
+        # would let the same username be refused rather than reused.
+        user.delete()
+
+    messages.success(request, f'{name} removed.')
     return redirect('admin_users_list')
+
+
+# ================= LOGIN SECURITY =================
+
+
+@admin_login_required
+def login_security_view(request):
+    """The sign-in log, and whatever is locked out right now."""
+    attempts = AdminLoginAttempt.objects.all()
+
+    outcome = request.GET.get('outcome', '')
+    if outcome in AdminLoginAttempt.Outcome.values:
+        attempts = attempts.filter(outcome=outcome)
+
+    query = request.GET.get('q', '').strip()
+    if query:
+        attempts = attempts.filter(
+            Q(username__icontains=query) | Q(ip_address__icontains=query)
+        )
+
+    page = Paginator(attempts, 50).get_page(request.GET.get('page'))
+
+    return render(request, 'dashboard/login_security.html', {
+        'active_page': 'login_security',
+        'page_obj': page,
+        'attempts': page.object_list,
+        'locks': security.locked_out(),
+        'outcome': outcome,
+        'outcomes': AdminLoginAttempt.Outcome.choices,
+        'query': query,
+        'username_threshold': security.USERNAME_THRESHOLD,
+        'ip_threshold': security.IP_THRESHOLD,
+    })
+
+
+@admin_login_required
+def login_security_unlock_view(request):
+    if request.method != 'POST':
+        return redirect('login_security')
+
+    scope = request.POST.get('scope', '')
+    key = request.POST.get('key', '').strip()
+
+    if scope not in (security.SCOPE_USERNAME, security.SCOPE_IP) or not key:
+        messages.error(request, 'Nothing to unlock.')
+        return redirect('login_security')
+
+    cleared = security.clear_failures(scope, key)
+    messages.success(
+        request,
+        f'Unlocked {key}. {cleared} failed attempt(s) no longer count, and '
+        'stay in the log.',
+    )
+    return redirect('login_security')
 
 from support.models import SupportTicket, TicketMessage
 from support.notifications import (
@@ -3898,3 +4337,533 @@ def tender_cancel_view(request, tender_id):
 
     messages.success(request, 'Tender cancelled.')
     return redirect('tender_detail', tender_id=tender_id)
+
+
+# ===========================================================================
+# Vendor Subscriptions
+#
+# Admins run the plan catalogue here and put vendors on a plan by hand.
+# Nothing charges a vendor and nothing is gated on holding a plan -- these
+# pages record who is on what, and the price on a plan is a label until
+# somebody wires a gateway to it.
+# ===========================================================================
+
+from datetime import date as _date
+
+from django.http import QueryDict
+
+from subscriptions import services as subscription_services
+from subscriptions import notifications as subscription_notify
+from subscriptions.models import (
+    SubscriptionPlan,
+    SubscriptionUpgradeRequest,
+    VendorSubscription,
+)
+from subscriptions.services import SubscriptionError
+
+
+def _parse_date(raw):
+    """A `YYYY-MM-DD` field off a form, or None when it was left empty."""
+    raw = (raw or '').strip()
+    if not raw:
+        return None
+    try:
+        return _date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def _parse_amount(raw, default=Decimal('0')):
+    raw = (raw or '').strip()
+    if not raw:
+        return default
+    try:
+        return Decimal(raw)
+    except (InvalidOperation, TypeError):
+        return default
+
+
+# ---------- Subscription Plans List ----------
+
+@admin_login_required
+def subscription_plans_list_view(request):
+    # Terms that ran out are swept here rather than by a cron, so the counts
+    # on this page never claim a lapsed vendor is still on a plan.
+    VendorSubscription.objects.expire_due()
+
+    plans = SubscriptionPlan.objects.annotate(
+        total_subscribers=Count('subscriptions', distinct=True)
+    )
+    # active_subscriber_count can't be annotated in the same pass without
+    # fighting the join above, so the live figure is counted once per plan.
+    live_counts = dict(
+        VendorSubscription.objects.active()
+        .values_list('plan_id')
+        .annotate(n=Count('id'))
+    )
+    for plan in plans:
+        plan.active_subscribers = live_counts.get(plan.id, 0)
+
+    context = {
+        'admin_user': request.admin_user,
+        'active_page': 'subscription_plans',
+        'subscription_requests_pending_count': _pending_request_count(),
+        'plans': plans,
+        'has_default': any(p.is_default for p in plans),
+    }
+    return render(request, 'dashboard/subscription_plans_list.html', context)
+
+
+# ---------- Add / Edit Subscription Plan ----------
+
+def _save_plan_from_post(request, plan=None):
+    """
+    Reads the whole plan form and writes it. Returns the plan on success,
+    None when something was wrong (a message has been queued by then).
+    """
+    name = request.POST.get('name', '').strip()
+    description = request.POST.get('description', '').strip()
+    price = _parse_amount(request.POST.get('price'), Decimal('0'))
+    billing_period = request.POST.get('billing_period', SubscriptionPlan.BillingPeriod.MONTHLY)
+    features = request.POST.get('features', '').strip()
+    sort_order = request.POST.get('sort_order', '0')
+    is_active = request.POST.get('is_active') == 'on'
+    is_default = request.POST.get('is_default') == 'on'
+
+    if not name:
+        messages.error(request, 'Plan name is required.')
+        return None
+    if price < 0:
+        messages.error(request, 'Price cannot be negative.')
+        return None
+
+    clash = SubscriptionPlan.objects.filter(name__iexact=name)
+    if plan:
+        clash = clash.exclude(id=plan.id)
+    if clash.exists():
+        messages.error(request, 'A plan with this name already exists.')
+        return None
+
+    plan = plan or SubscriptionPlan()
+    plan.name = name
+    plan.description = description
+    plan.price = price
+    plan.billing_period = billing_period
+    plan.features = features
+    plan.sort_order = sort_order or 0
+    plan.is_active = is_active
+    plan.is_default = is_default
+    plan.save()
+    return plan
+
+
+@admin_login_required
+def subscription_plan_add_view(request):
+    if request.method == 'POST':
+        plan = _save_plan_from_post(request)
+        if plan:
+            messages.success(request, f'Plan "{plan.name}" created.')
+            return redirect('subscription_plans_list')
+
+    return render(request, 'dashboard/subscription_plan_form.html', {
+        'admin_user': request.admin_user,
+        'active_page': 'subscription_plans',
+        'billing_periods': SubscriptionPlan.BillingPeriod.choices,
+        'is_edit': False,
+    })
+
+
+@admin_login_required
+def subscription_plan_edit_view(request, plan_id):
+    plan = get_object_or_404(SubscriptionPlan, id=plan_id)
+
+    if request.method == 'POST':
+        if _save_plan_from_post(request, plan):
+            messages.success(request, 'Plan updated.')
+            return redirect('subscription_plans_list')
+
+    return render(request, 'dashboard/subscription_plan_form.html', {
+        'admin_user': request.admin_user,
+        'active_page': 'subscription_plans',
+        'billing_periods': SubscriptionPlan.BillingPeriod.choices,
+        'plan': plan,
+        'is_edit': True,
+    })
+
+
+# ---------- Toggle / Delete Subscription Plan ----------
+
+@admin_login_required
+def subscription_plan_toggle_view(request, plan_id):
+    if request.method != 'POST':
+        return redirect('subscription_plans_list')
+
+    plan = get_object_or_404(SubscriptionPlan, id=plan_id)
+    plan.is_active = not plan.is_active
+    plan.save(update_fields=['is_active'])
+    messages.success(
+        request,
+        f'Plan "{plan.name}" {"activated" if plan.is_active else "deactivated"}.',
+    )
+    return redirect('subscription_plans_list')
+
+
+@admin_login_required
+def subscription_plan_delete_view(request, plan_id):
+    if request.method != 'POST':
+        return redirect('subscription_plans_list')
+
+    plan = get_object_or_404(SubscriptionPlan, id=plan_id)
+
+    # A plan somebody has been on is part of the record. Deleting it would
+    # take their history with it, so the answer is to deactivate instead.
+    if plan.subscriptions.exists():
+        messages.error(
+            request,
+            f'"{plan.name}" has subscribers on record and cannot be deleted. '
+            f'Deactivate it instead — it will stop being offered but the '
+            f'history stays.',
+        )
+        return redirect('subscription_plans_list')
+
+    name = plan.name
+    plan.delete()
+    messages.success(request, f'Plan "{name}" deleted.')
+    return redirect('subscription_plans_list')
+
+
+# ---------- Subscribers ----------
+
+@admin_login_required
+def subscribers_list_view(request):
+    VendorSubscription.objects.expire_due()
+
+    tab = request.GET.get('tab', 'subscribers')
+    status = request.GET.get('status', '')
+    plan_id = request.GET.get('plan', '')
+    search = request.GET.get('search', '').strip()
+
+    plans = SubscriptionPlan.objects.all()
+
+    def _vendor_search(queryset, prefix=''):
+        if not search:
+            return queryset
+        field = f'{prefix}user__'
+        return queryset.filter(
+            models.Q(**{f'{field}first_name__icontains': search})
+            | models.Q(**{f'{field}last_name__icontains': search})
+            | models.Q(**{f'{field}phone_number__icontains': search})
+        )
+
+    if tab == 'unsubscribed':
+        # Vendors holding nothing live -- who an admin is here to put on a plan.
+        subscribed_ids = VendorSubscription.objects.active().values('vendor_id')
+        rows = _vendor_search(
+            Vendor.objects.exclude(id__in=subscribed_ids)
+            .select_related('user')
+            .order_by('-id')
+        )
+    else:
+        rows = VendorSubscription.objects.select_related(
+            'vendor__user', 'plan', 'created_by'
+        )
+        if status:
+            rows = rows.filter(status=status)
+        if plan_id:
+            rows = rows.filter(plan_id=plan_id)
+        rows = _vendor_search(rows, prefix='vendor__')
+
+    paginator = Paginator(rows, 20)
+    page_obj = paginator.get_page(request.GET.get('page', 1))
+
+    # Page links have to carry the filters, or paging out of a filtered view
+    # silently drops back to every subscription on the books.
+    filters = QueryDict(mutable=True)
+    filters.update({k: v for k, v in {
+        'tab': tab, 'status': status, 'plan': plan_id, 'search': search,
+    }.items() if v})
+    filter_qs = filters.urlencode()
+
+    active_subscriptions = VendorSubscription.objects.active()
+    context = {
+        'admin_user': request.admin_user,
+        'active_page': 'subscribers',
+        'subscription_requests_pending_count': _pending_request_count(),
+        'tab': tab,
+        'page_obj': page_obj,
+        'filter_qs': f'{filter_qs}&' if filter_qs else '',
+        'plans': plans,
+        'assignable_plans': plans.filter(is_active=True),
+        'statuses': VendorSubscription.Status.choices,
+        'current_status': status,
+        'current_plan': plan_id,
+        'search': search,
+        'active_count': active_subscriptions.count(),
+        'unsubscribed_count': Vendor.objects.exclude(
+            id__in=active_subscriptions.values('vendor_id')
+        ).count(),
+        'expiring_count': VendorSubscription.objects.expiring_within(
+            VendorSubscription.EXPIRING_SOON_DAYS
+        ).count(),
+        'collected_total': VendorSubscription.objects.aggregate(
+            total=Sum('amount_paid')
+        )['total'] or 0,
+        'vendors': Vendor.objects.select_related('user').order_by(
+            'user__first_name', 'user__last_name', 'id'
+        ),
+    }
+    return render(request, 'dashboard/subscribers_list.html', context)
+
+
+# ---------- One Vendor's Subscription ----------
+
+@admin_login_required
+def vendor_subscription_view(request, vendor_id):
+    VendorSubscription.objects.expire_due()
+
+    vendor = get_object_or_404(Vendor.objects.select_related('user'), id=vendor_id)
+    current = VendorSubscription.objects.active_for(vendor)
+    history = VendorSubscription.objects.filter(vendor=vendor).select_related(
+        'plan', 'created_by'
+    )
+
+    context = {
+        'admin_user': request.admin_user,
+        'active_page': 'subscribers',
+        'subscription_requests_pending_count': _pending_request_count(),
+        'vendor': vendor,
+        'current': current,
+        'queued': VendorSubscription.objects.queued_for(vendor),
+        'pending_request': SubscriptionUpgradeRequest.objects.pending_for(vendor),
+        'history': history,
+        'assignable_plans': SubscriptionPlan.objects.filter(is_active=True),
+        'today': timezone.localdate(),
+    }
+    return render(request, 'dashboard/vendor_subscription.html', context)
+
+
+# ---------- Assign / Renew / Cancel ----------
+
+@admin_login_required
+def subscription_assign_view(request):
+    """Puts a vendor on a plan. Whatever they held before is ended first."""
+    fallback = redirect('subscribers_list')
+    if request.method != 'POST':
+        return fallback
+
+    vendor = Vendor.objects.filter(id=request.POST.get('vendor') or 0).first()
+    plan = SubscriptionPlan.objects.filter(id=request.POST.get('plan') or 0).first()
+    back = redirect('vendor_subscription', vendor_id=vendor.id) if vendor else fallback
+
+    if not vendor:
+        messages.error(request, 'Pick a vendor.')
+        return fallback
+    if not plan:
+        messages.error(request, 'Pick a plan.')
+        return back
+    if not plan.is_active:
+        messages.error(request, f'"{plan.name}" is deactivated and cannot be assigned.')
+        return back
+
+    start_date = _parse_date(request.POST.get('start_date')) or timezone.localdate()
+    # An end date typed in by hand wins over the plan's own term length --
+    # that is how you hand somebody a trial or an odd-length extension.
+    end_date = _parse_date(request.POST.get('end_date'))
+
+    try:
+        subscription = subscription_services.assign_plan(
+            vendor,
+            plan,
+            start_date=start_date,
+            end_date=end_date,
+            amount_paid=_parse_amount(request.POST.get('amount_paid'), plan.price),
+            payment_reference=request.POST.get('payment_reference', '').strip(),
+            notes=request.POST.get('notes', '').strip(),
+            granted_by=request.admin_user,
+        )
+    except SubscriptionError as e:
+        messages.error(request, str(e))
+        return back
+
+    messages.success(
+        request,
+        f'{vendor.display_name} is now on "{plan.name}"'
+        + (f' until {subscription.end_date}.' if subscription.end_date else ' (no expiry).'),
+    )
+    return redirect('vendor_subscription', vendor_id=vendor.id)
+
+
+@admin_login_required
+def subscription_renew_view(request, subscription_id):
+    if request.method != 'POST':
+        return redirect('subscribers_list')
+
+    subscription = get_object_or_404(
+        VendorSubscription.objects.select_related('vendor__user', 'plan'),
+        id=subscription_id,
+    )
+
+    try:
+        renewed = subscription_services.renew(
+            subscription,
+            granted_by=request.admin_user,
+            amount_paid=_parse_amount(
+                request.POST.get('amount_paid'), subscription.plan.price
+            ),
+            payment_reference=request.POST.get('payment_reference', '').strip(),
+        )
+    except SubscriptionError as e:
+        messages.error(request, str(e))
+        return redirect('vendor_subscription', vendor_id=subscription.vendor_id)
+
+    messages.success(
+        request,
+        f'Renewed on "{renewed.plan.name}", running from {renewed.start_date}'
+        + (f' to {renewed.end_date}.' if renewed.end_date else ' with no expiry.'),
+    )
+    return redirect('vendor_subscription', vendor_id=subscription.vendor_id)
+
+
+@admin_login_required
+def subscription_cancel_view(request, subscription_id):
+    if request.method != 'POST':
+        return redirect('subscribers_list')
+
+    subscription = get_object_or_404(
+        VendorSubscription.objects.select_related('vendor__user', 'plan'),
+        id=subscription_id,
+    )
+
+    if subscription.status != VendorSubscription.Status.ACTIVE:
+        messages.error(request, 'That subscription is already closed.')
+    else:
+        subscription.cancel(reason=request.POST.get('reason', '').strip())
+        # Only told here. A plan *change* also ends a term, but there the
+        # vendor gets the "you're on X" message instead, which is the news.
+        subscription_notify.notify_subscription_ended(subscription)
+        messages.success(
+            request,
+            f'{subscription.vendor.display_name} is off "{subscription.plan.name}".',
+        )
+    return redirect('vendor_subscription', vendor_id=subscription.vendor_id)
+
+
+# ---------- Upgrade Requests ----------
+#
+# Vendors pick a tier in the app but never grant themselves one -- nothing
+# charges them yet, so a self-served upgrade would be a giveaway. They ask
+# here; approving is what actually starts the term.
+
+def _pending_request_count():
+    return SubscriptionUpgradeRequest.objects.filter(
+        status=SubscriptionUpgradeRequest.Status.PENDING
+    ).count()
+
+
+@admin_login_required
+def subscription_requests_list_view(request):
+    status = request.GET.get('status', SubscriptionUpgradeRequest.Status.PENDING)
+
+    requests = SubscriptionUpgradeRequest.objects.select_related(
+        'vendor__user', 'plan', 'reviewed_by'
+    )
+    if status:
+        requests = requests.filter(status=status)
+
+    paginator = Paginator(requests, 20)
+    page_obj = paginator.get_page(request.GET.get('page', 1))
+
+    # The vendor's current plan is what makes a request readable -- "Free to
+    # Gold" means something, "wants Gold" on its own does not.
+    current_by_vendor = {
+        s.vendor_id: s
+        for s in VendorSubscription.objects.active().select_related('plan')
+        .filter(vendor_id__in=[r.vendor_id for r in page_obj])
+    }
+    for upgrade_request in page_obj:
+        upgrade_request.current_plan = current_by_vendor.get(upgrade_request.vendor_id)
+
+    context = {
+        'admin_user': request.admin_user,
+        'active_page': 'subscription_requests',
+        'page_obj': page_obj,
+        'statuses': SubscriptionUpgradeRequest.Status.choices,
+        'current_status': status,
+        'filter_qs': f'status={status}&' if status else '',
+        'subscription_requests_pending_count': _pending_request_count(),
+    }
+    return render(request, 'dashboard/subscription_requests_list.html', context)
+
+
+def _request_redirect(request, upgrade_request):
+    """
+    Where to land after answering a request. The two places these forms are
+    posted from are the queue and the vendor's own page; anything else is
+    ignored rather than followed, so a crafted `next` cannot bounce an admin
+    off the dashboard.
+    """
+    if request.POST.get('next') == 'vendor':
+        return redirect('vendor_subscription', vendor_id=upgrade_request.vendor_id)
+    return redirect('subscription_requests_list')
+
+
+@admin_login_required
+def subscription_request_approve_view(request, request_id):
+    if request.method != 'POST':
+        return redirect('subscription_requests_list')
+
+    upgrade_request = get_object_or_404(
+        SubscriptionUpgradeRequest.objects.select_related('vendor__user', 'plan'),
+        id=request_id,
+    )
+    back = _request_redirect(request, upgrade_request)
+
+    try:
+        subscription_services.approve_request(
+            upgrade_request,
+            reviewed_by=request.admin_user,
+            amount_paid=_parse_amount(
+                request.POST.get('amount_paid'), upgrade_request.plan.price
+            ),
+            payment_reference=request.POST.get('payment_reference', '').strip(),
+            review_note=request.POST.get('review_note', '').strip(),
+        )
+    except SubscriptionError as e:
+        messages.error(request, str(e))
+        return back
+
+    messages.success(
+        request,
+        f'{upgrade_request.vendor.display_name} is now on '
+        f'"{upgrade_request.plan.name}".',
+    )
+    return back
+
+
+@admin_login_required
+def subscription_request_reject_view(request, request_id):
+    if request.method != 'POST':
+        return redirect('subscription_requests_list')
+
+    upgrade_request = get_object_or_404(
+        SubscriptionUpgradeRequest.objects.select_related('vendor__user', 'plan'),
+        id=request_id,
+    )
+    back = _request_redirect(request, upgrade_request)
+
+    try:
+        subscription_services.reject_request(
+            upgrade_request,
+            reviewed_by=request.admin_user,
+            reason=request.POST.get('reason', '').strip(),
+        )
+    except SubscriptionError as e:
+        messages.error(request, str(e))
+        return redirect('subscription_requests_list')
+
+    messages.success(
+        request,
+        f'Turned down {upgrade_request.vendor.display_name}\'s request for '
+        f'"{upgrade_request.plan.name}".',
+    )
+    return redirect('subscription_requests_list')

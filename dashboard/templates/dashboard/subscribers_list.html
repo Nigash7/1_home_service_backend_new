@@ -1,0 +1,245 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}Subscribers{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div>
+            <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">Subscribers</h1>
+            <p class="text-gray-500 mt-1">Which vendors are on which plan.</p>
+        </div>
+        <a href="{% url 'subscription_plans_list' %}"
+           class="inline-flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold py-2.5 px-5 rounded-lg">
+            Manage Plans
+        </a>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <!-- Stats -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+            <div class="text-xs text-gray-500 uppercase tracking-wide">On a plan</div>
+            <div class="text-2xl font-bold text-gray-900 mt-1">{{ active_count }}</div>
+        </div>
+        <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+            <div class="text-xs text-gray-500 uppercase tracking-wide">No plan</div>
+            <div class="text-2xl font-bold text-gray-900 mt-1">{{ unsubscribed_count }}</div>
+        </div>
+        <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+            <div class="text-xs text-gray-500 uppercase tracking-wide">Expiring in 7 days</div>
+            <div class="text-2xl font-bold {% if expiring_count %}text-orange-600{% else %}text-gray-900{% endif %} mt-1">{{ expiring_count }}</div>
+        </div>
+        <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+            <div class="text-xs text-gray-500 uppercase tracking-wide">Recorded offline</div>
+            <div class="text-2xl font-bold text-gray-900 mt-1">₹{{ collected_total|floatformat:0 }}</div>
+        </div>
+    </div>
+
+    <!-- Assign a plan -->
+    <details class="bg-white rounded-2xl shadow-sm border border-gray-100 mb-6" {% if tab == 'unsubscribed' %}open{% endif %}>
+        <summary class="px-4 py-3 cursor-pointer text-sm font-semibold text-gray-700 select-none">
+            Put a vendor on a plan
+        </summary>
+        <form method="post" action="{% url 'subscription_assign' %}" class="px-4 pb-4 pt-1 border-t border-gray-100">
+            {% csrf_token %}
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Vendor *</label>
+                    <select name="vendor" required class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                        <option value="">Select vendor…</option>
+                        {% for v in vendors %}
+                        <option value="{{ v.id }}">{{ v.display_name }}{% if v.user.phone_number %} — {{ v.user.phone_number }}{% endif %}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Plan *</label>
+                    <select name="plan" required class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                        <option value="">Select plan…</option>
+                        {% for plan in assignable_plans %}
+                        <option value="{{ plan.id }}">{{ plan.name }} — {% if plan.is_free %}Free{% else %}₹{{ plan.price|floatformat:0 }}{% endif %} / {{ plan.get_billing_period_display }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Start date</label>
+                    <input type="date" name="start_date"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">End date</label>
+                    <input type="date" name="end_date"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Amount paid (₹)</label>
+                    <input type="number" name="amount_paid" step="0.01" min="0" placeholder="Defaults to plan price"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Payment reference</label>
+                    <input type="text" name="payment_reference" placeholder="UPI ref / receipt no."
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                </div>
+                <div class="md:col-span-2 flex gap-3">
+                    <input type="text" name="notes" placeholder="Notes (optional)"
+                           class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                    <button type="submit"
+                            class="bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2 px-5 rounded-lg whitespace-nowrap">
+                        Assign
+                    </button>
+                </div>
+            </div>
+            <p class="text-xs text-gray-500 mt-3">
+                Leave the dates empty to run the plan's own term from today.
+                Whatever the vendor is on now is ended first — one live plan per vendor.
+            </p>
+        </form>
+    </details>
+
+    <!-- Tabs -->
+    <div class="flex gap-2 mb-4">
+        <a href="?tab=subscribers"
+           class="px-4 py-2 rounded-lg text-sm font-semibold {% if tab != 'unsubscribed' %}bg-primary-600 text-white{% else %}bg-white border border-gray-200 text-gray-600 hover:bg-gray-50{% endif %}">
+            Subscriptions
+        </a>
+        <a href="?tab=unsubscribed"
+           class="px-4 py-2 rounded-lg text-sm font-semibold {% if tab == 'unsubscribed' %}bg-primary-600 text-white{% else %}bg-white border border-gray-200 text-gray-600 hover:bg-gray-50{% endif %}">
+            Vendors with no plan ({{ unsubscribed_count }})
+        </a>
+    </div>
+
+    <!-- Filters -->
+    <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 mb-6">
+        <form method="get" class="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <input type="hidden" name="tab" value="{{ tab }}">
+            <input type="text" name="search" value="{{ search }}" placeholder="Search name, phone…"
+                   class="px-4 py-2 border border-gray-300 rounded-lg text-sm">
+            {% if tab != 'unsubscribed' %}
+            <select name="status" class="px-4 py-2 border border-gray-300 rounded-lg text-sm">
+                <option value="">All statuses</option>
+                {% for value, label in statuses %}
+                <option value="{{ value }}" {% if current_status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <select name="plan" class="px-4 py-2 border border-gray-300 rounded-lg text-sm">
+                <option value="">All plans</option>
+                {% for plan in plans %}
+                <option value="{{ plan.id }}" {% if current_plan|stringformat:"i" == plan.id|stringformat:"i" %}selected{% endif %}>{{ plan.name }}</option>
+                {% endfor %}
+            </select>
+            {% endif %}
+            <button type="submit" class="bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2 px-4 rounded-lg">
+                Filter
+            </button>
+        </form>
+    </div>
+
+    <!-- Table -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead>
+                    <tr class="bg-gray-50 text-left">
+                        <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Vendor</th>
+                        <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Phone</th>
+                        {% if tab == 'unsubscribed' %}
+                        <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Verification</th>
+                        <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Service area</th>
+                        <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase"></th>
+                        {% else %}
+                        <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Plan</th>
+                        <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Term</th>
+                        <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Paid</th>
+                        <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% if tab == 'unsubscribed' %}
+                        {% for vendor in page_obj %}
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ vendor.display_name }}</td>
+                            <td class="px-4 py-3 text-sm text-gray-700">{{ vendor.user.phone_number|default:"—" }}</td>
+                            <td class="px-4 py-3">
+                                <span class="text-xs font-semibold px-2 py-1 rounded-full
+                                    {% if vendor.verification_status == 'VERIFIED' %}bg-green-100 text-green-700
+                                    {% elif vendor.verification_status == 'PENDING' %}bg-orange-100 text-orange-700
+                                    {% else %}bg-red-100 text-red-700{% endif %}">
+                                    {{ vendor.get_verification_status_display }}
+                                </span>
+                            </td>
+                            <td class="px-4 py-3 text-sm text-gray-700">{{ vendor.service_area|default:"—" }}</td>
+                            <td class="px-4 py-3 text-right">
+                                <a href="{% url 'vendor_subscription' vendor.id %}"
+                                   class="text-xs font-semibold text-primary-600 hover:underline whitespace-nowrap">
+                                    Assign a plan →
+                                </a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="5" class="px-4 py-12 text-center text-gray-500">Every vendor is on a plan.</td></tr>
+                        {% endfor %}
+                    {% else %}
+                        {% for sub in page_obj %}
+                        <tr class="hover:bg-gray-50 cursor-pointer" onclick="window.location='{% url 'vendor_subscription' sub.vendor_id %}'">
+                            <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ sub.vendor.display_name }}</td>
+                            <td class="px-4 py-3 text-sm text-gray-700">{{ sub.vendor.user.phone_number|default:"—" }}</td>
+                            <td class="px-4 py-3 text-sm text-gray-700">
+                                {{ sub.plan.name }}
+                                <span class="text-xs text-gray-400">
+                                    {% if sub.plan.is_free %}Free{% else %}₹{{ sub.plan.price|floatformat:0 }}{% endif %}
+                                </span>
+                            </td>
+                            <td class="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
+                                {{ sub.start_date|date:"d M Y" }} →
+                                {% if sub.end_date %}{{ sub.end_date|date:"d M Y" }}{% else %}<span class="text-gray-400">no expiry</span>{% endif %}
+                                {% if sub.is_expiring_soon %}
+                                <span class="ml-1 bg-orange-100 text-orange-700 text-xs font-semibold px-2 py-0.5 rounded-full">{{ sub.days_remaining }}d left</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-3 text-sm text-gray-700">₹{{ sub.amount_paid|floatformat:0 }}</td>
+                            <td class="px-4 py-3">
+                                <span class="text-xs font-semibold px-2 py-1 rounded-full
+                                    {% if sub.status == 'ACTIVE' %}bg-green-100 text-green-700
+                                    {% elif sub.status == 'EXPIRED' %}bg-gray-100 text-gray-600
+                                    {% else %}bg-red-100 text-red-700{% endif %}">
+                                    {{ sub.get_status_display }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="6" class="px-4 py-12 text-center text-gray-500">No subscriptions match these filters.</td></tr>
+                        {% endfor %}
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if page_obj.has_other_pages %}
+        <div class="px-4 py-3 border-t border-gray-100 flex items-center justify-between text-sm">
+            <div class="text-gray-500">Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of {{ page_obj.paginator.count }}</div>
+            <div class="flex gap-2">
+                {% if page_obj.has_previous %}
+                    <a href="?{{ filter_qs }}page={{ page_obj.previous_page_number }}" class="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-50">Previous</a>
+                {% endif %}
+                <span class="px-3 py-1">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+                {% if page_obj.has_next %}
+                    <a href="?{{ filter_qs }}page={{ page_obj.next_page_number }}" class="px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-50">Next</a>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

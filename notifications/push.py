@@ -20,6 +20,7 @@ import threading
 from pathlib import Path
 
 from django.conf import settings
+from django.db import connection
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -159,6 +160,21 @@ def _send_one(token_obj, title, body, data, image_url=""):
 
 
 def _deliver(notification_id):
+    """
+    Delivers one push and then hands its database connection back.
+
+    Django opens a *separate* connection per thread, and nothing else will
+    ever close this one -- so without the close every push leaks a connection
+    for the life of the process. A busy worker, or a long test run, walks
+    straight into "sorry, too many clients already".
+    """
+    try:
+        _deliver_now(notification_id)
+    finally:
+        connection.close()
+
+
+def _deliver_now(notification_id):
     """
     Runs on a background thread, so it must never raise: an escaping exception
     prints a bare traceback nobody owns and leaves the notification stuck on

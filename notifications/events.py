@@ -267,6 +267,30 @@ VENDOR_SUPPORT_STATUS = _e(
     "Your ticket \"{subject}\" is now {status}.",
     route="/support/{ticket_id}",
 )
+VENDOR_SUBSCRIPTION_STARTED = _e(
+    "vendor.subscription_started", VENDOR, CAT_ACCOUNT,
+    "You're on the {plan_name} plan",
+    "Your {plan_name} plan is active{term}.",
+    route="/subscription",
+)
+VENDOR_SUBSCRIPTION_UPGRADE_APPROVED = _e(
+    "vendor.subscription_upgrade_approved", VENDOR, CAT_ACCOUNT,
+    "Upgrade approved",
+    "You've been moved to the {plan_name} plan{term}.",
+    route="/subscription",
+)
+VENDOR_SUBSCRIPTION_UPGRADE_REJECTED = _e(
+    "vendor.subscription_upgrade_rejected", VENDOR, CAT_ACCOUNT,
+    "Upgrade not approved",
+    "Your request for the {plan_name} plan wasn't approved. {reason}",
+    route="/subscription",
+)
+VENDOR_SUBSCRIPTION_ENDED = _e(
+    "vendor.subscription_ended", VENDOR, CAT_ACCOUNT,
+    "Your {plan_name} plan has ended",
+    "Talk to your admin if you'd like to carry on.",
+    route="/subscription",
+)
 
 # ============================================================ ADMIN dashboard
 ADMIN_BOOKING_CREATED = _e(

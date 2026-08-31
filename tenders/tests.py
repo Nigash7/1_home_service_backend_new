@@ -23,6 +23,7 @@ from services.models import ServiceCategory, SubCategory
 from vendors.models import Vendor
 
 from .models import Tender, TenderBid, TenderMilestone
+from dashboard.testing import sign_in
 
 # Smallest valid PNG, so ImageField validation has something real to read.
 PNG_BYTES = base64.b64decode(
@@ -773,9 +774,7 @@ class TenderDashboardTests(MediaSandboxMixin, TestCase):
         # The dashboard authenticates through a staff User held in the session.
         self.staff = User.objects.create_user(
             username='admin1', password='pw', role=User.Role.ADMIN, is_staff=True)
-        session = self.client.session
-        session['admin_user_id'] = self.staff.id
-        session.save()
+        sign_in(self.client, self.staff)
 
         self.tender = Tender.objects.create(
             customer=self.customer, title='Build a 3BHK', category=self.category,

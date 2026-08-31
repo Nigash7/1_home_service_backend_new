@@ -1,0 +1,99 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}Roles{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto">
+    <div class="flex justify-between items-start mb-6">
+        <div>
+            <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">Roles</h1>
+            <p class="text-gray-500 mt-1">
+                Name a job, tick what it can reach, then put people in it.
+            </p>
+        </div>
+        <a href="{% url 'role_add' %}"
+           class="bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2 px-4 rounded-lg flex items-center gap-2 shadow-sm">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            Add Role
+        </a>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm
+                {% if message.tags == 'error' %}bg-red-50 text-red-700
+                {% elif message.tags == 'warning' %}bg-amber-50 text-amber-800
+                {% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    {% if not roles %}
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-10 text-center">
+            <div class="inline-flex items-center justify-center w-14 h-14 bg-primary-50 rounded-2xl mb-4">
+                <svg class="w-7 h-7 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+                </svg>
+            </div>
+            <h2 class="font-semibold text-gray-900">No roles yet</h2>
+            <p class="text-sm text-gray-500 mt-1 max-w-md mx-auto">
+                A role is a name plus a list of accesses — &ldquo;Booking Desk&rdquo;,
+                &ldquo;Content Team&rdquo;. Create one before adding staff, since every
+                dashboard user apart from a super admin needs one.
+            </p>
+            <a href="{% url 'role_add' %}"
+               class="inline-block mt-5 bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2.5 px-5 rounded-lg">
+                Create the first role
+            </a>
+        </div>
+    {% else %}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {% for role in roles %}
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 flex flex-col">
+                <div class="flex justify-between items-start gap-3">
+                    <div class="min-w-0">
+                        <div class="font-bold text-gray-900 truncate">{{ role.name }}</div>
+                        {% if role.description %}
+                            <p class="text-sm text-gray-500 mt-0.5">{{ role.description }}</p>
+                        {% endif %}
+                    </div>
+                    {% if role.is_active %}
+                        <span class="flex-shrink-0 bg-green-50 text-green-700 text-xs font-medium px-2 py-1 rounded-full">Active</span>
+                    {% else %}
+                        <span class="flex-shrink-0 bg-gray-100 text-gray-500 text-xs font-medium px-2 py-1 rounded-full">Off</span>
+                    {% endif %}
+                </div>
+
+                <div class="flex flex-wrap gap-1.5 mt-4 flex-1 content-start">
+                    {% for label in role.permission_labels %}
+                        <span class="bg-primary-50 text-primary-700 text-xs px-2 py-1 rounded-md">{{ label }}</span>
+                    {% empty %}
+                        <span class="text-xs text-gray-400">No accesses — nobody in this role can reach anything.</span>
+                    {% endfor %}
+                </div>
+
+                <div class="flex items-center justify-between mt-5 pt-4 border-t border-gray-100">
+                    <span class="text-xs text-gray-500">
+                        {{ role.staff_total }} user{{ role.staff_total|pluralize }}
+                    </span>
+                    <div class="flex items-center gap-2">
+                        <a href="{% url 'role_edit' role.id %}"
+                           class="text-primary-600 hover:text-primary-700 text-sm font-medium">Edit</a>
+                        <form method="post" action="{% url 'role_delete' role.id %}"
+                              onsubmit="return confirm('Delete the role &quot;{{ role.name }}&quot;?');">
+                            {% csrf_token %}
+                            <button type="submit" class="text-red-600 hover:text-red-700 text-sm font-medium">
+                                Delete
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

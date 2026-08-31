@@ -76,6 +76,42 @@
                 </div>
             </div>
 
+            <!-- Subscription: which membership tier this vendor is on -->
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 mb-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-base font-semibold text-gray-900">Subscription</h2>
+                    <a href="{% url 'vendor_subscription' vendor.id %}"
+                       class="text-xs font-semibold text-primary-600 hover:underline">Manage →</a>
+                </div>
+
+                {% if subscription %}
+                <div class="flex items-baseline justify-between gap-3">
+                    <div class="text-lg font-bold text-gray-900">{{ subscription.plan.name }}</div>
+                    <div class="text-sm text-gray-500">
+                        {% if subscription.plan.is_free %}Free{% else %}₹{{ subscription.plan.price|floatformat:0 }}{% endif %}
+                        / {{ subscription.plan.get_billing_period_display }}
+                    </div>
+                </div>
+                <div class="text-sm text-gray-700 mt-2">
+                    {{ subscription.start_date|date:"d M Y" }} →
+                    {% if subscription.end_date %}
+                        {{ subscription.end_date|date:"d M Y" }}
+                        <span class="{% if subscription.is_expiring_soon %}text-orange-600 font-semibold{% else %}text-gray-500{% endif %}">
+                            ({{ subscription.days_remaining }} day{{ subscription.days_remaining|pluralize }} left)
+                        </span>
+                    {% else %}
+                        <span class="text-gray-500">no expiry</span>
+                    {% endif %}
+                </div>
+                {% else %}
+                <p class="text-sm text-gray-500">
+                    Not on a plan.
+                    <a href="{% url 'vendor_subscription' vendor.id %}" class="text-primary-600 hover:underline">Assign one</a>
+                    — nothing is gated on it, so this is a record only.
+                </p>
+                {% endif %}
+            </div>
+
             <!-- Payout account: where this vendor's money goes -->
             <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 mb-6">
                 <div class="flex justify-between items-center mb-4">

@@ -7,6 +7,7 @@ from customers.models import Customer
 from payments.models import Payment
 from services.models import ServiceCategory
 from vendors.models import Vendor, VendorBankAccount
+from dashboard.testing import sign_in
 
 
 class BookingDetailRendersTests(TestCase):
@@ -31,9 +32,7 @@ class BookingDetailRendersTests(TestCase):
             ifsc_code='SBIN0001234',
         )
         self.cat = ServiceCategory.objects.create(name='Plumbing')
-        session = self.client.session
-        session['admin_user_id'] = self.admin.id
-        session.save()
+        sign_in(self.client, self.admin)
 
     def booking(self, status=Booking.Status.COMPLETED):
         return Booking.objects.create(
@@ -143,9 +142,7 @@ class VendorDetailPayoutTests(TestCase):
             vendor=self.vendor, account_holder_name='Ramesh Kumar',
             account_number='123456789012', ifsc_code='SBIN0001234',
             bank_name='State Bank of India')
-        session = self.client.session
-        session['admin_user_id'] = self.admin.id
-        session.save()
+        sign_in(self.client, self.admin)
 
     def test_page_shows_masked_details_and_a_verify_button(self):
         html = self.client.get(
@@ -218,9 +215,7 @@ class PayoutRendersTests(TestCase):
         self.payment.payout_status = Payment.PayoutStatus.RELEASED
         self.payment.save(update_fields=['payout_status'])
 
-        session = self.client.session
-        session['admin_user_id'] = self.admin.id
-        session.save()
+        sign_in(self.client, self.admin)
 
     def payout(self, status, **kwargs):
         from payments.models import Payout
