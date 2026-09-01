@@ -1,6 +1,8 @@
 from django.db import models
 from django.conf import settings
 
+from config.storages import private_storage
+
 
 class VendorQuerySet(models.QuerySet):
     """Reusable filters shared by the customer API and the dashboard."""
@@ -345,7 +347,10 @@ class VendorDocument(models.Model):
 
     vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, related_name='documents')
     doc_type = models.CharField(max_length=20, choices=DocType.choices)
-    file = models.FileField(upload_to='vendor_documents/')
+    # Local disk only -- never Cloudinary. These are ID and address proofs, and
+    # a Cloudinary delivery URL authorizes nobody: anyone holding the link can
+    # read the file. See private_storage in config/storages.py.
+    file = models.FileField(upload_to='vendor_documents/', storage=private_storage)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

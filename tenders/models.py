@@ -1,6 +1,8 @@
 from django.db import models
 from django.utils import timezone
 
+from config.storages import raw_storage
+
 
 class TenderQuerySet(models.QuerySet):
     """Reusable filters shared by the vendor API and the dashboard."""
@@ -325,7 +327,10 @@ class TenderAttachment(models.Model):
     tender = models.ForeignKey(
         Tender, on_delete=models.CASCADE, related_name='attachments'
     )
-    file = models.FileField(upload_to='tender_attachments/')
+    # Raw, not image: a customer attaches PDF drawings as readily as photos,
+    # and only raw takes both. Raw also keeps the extension on the stored name,
+    # which is_image below needs to choose a preview over a download link.
+    file = models.FileField(upload_to='tender_attachments/', storage=raw_storage)
     caption = models.CharField(max_length=200, blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 

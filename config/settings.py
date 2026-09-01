@@ -3,6 +3,7 @@ from decouple import config
 from django.core.exceptions import ImproperlyConfigured
 import dj_database_url
 import os
+import sys
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -37,6 +38,11 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
+    # Media (images/video) is served from Cloudinary's CDN, not from this
+    # server. Listed after staticfiles because only media is delegated --
+    # static files stay with whitenoise.
+    'cloudinary',
+    'cloudinary_storage',
 
     # our apps
     'accounts',
@@ -232,13 +238,68 @@ USE_TZ = True
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-STATICFILES_STORAGE = (
-    "whitenoise.storage.CompressedManifestStaticFilesStorage"
-)
-
 # Media files (vendor documents, job-start photos)
+# Kept for the local-disk fallback below, and because config/urls.py serves
+# MEDIA_URL while DEBUG is on.
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+# ---------- Cloudinary (image & video CDN) ----------
+# Uploads go to Cloudinary instead of this server's disk, and are delivered
+# from a CDN. That removes two problems at once: Python is no longer the thing
+# streaming a 100 MB video to a phone, and an admin who uploads a 2 MB PNG as a
+# category icon no longer ships 2 MB to every user -- it is re-encoded on
+# delivery instead (see config/storages.py).
+CLOUDINARY_CLOUD_NAME = config('CLOUDINARY_CLOUD_NAME', default='')
+CLOUDINARY_API_KEY = config('CLOUDINARY_API_KEY', default='')
+CLOUDINARY_API_SECRET = config('CLOUDINARY_API_SECRET', default='')
+
+# The test suite uploads real files in several places. Pointed at Cloudinary
+# those uploads would cross the network on every run -- slow, flaky offline,
+# and each run would leave test junk in the live account and burn credits.
+# Tests therefore always use local disk, whatever .env says.
+_RUNNING_TESTS = 'test' in sys.argv
+
+# Empty cloud name = not configured yet. Falling back to local disk rather
+# than erroring keeps offline work and a fresh clone runnable.
+USE_CLOUDINARY = bool(
+    CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET
+) and not _RUNNING_TESTS
+
+CLOUDINARY_STORAGE = {
+    'CLOUD_NAME': CLOUDINARY_CLOUD_NAME,
+    'API_KEY': CLOUDINARY_API_KEY,
+    'API_SECRET': CLOUDINARY_API_SECRET,
+    # Tags every upload made by this project, so orphaned files can be found
+    # and cleaned up later without touching anything uploaded by hand.
+    'MEDIA_TAG': 'home_service_media',
+}
+
+# Images are the default because they are the overwhelming majority of fields.
+# Video and vendor documents opt out per field, via FileField(storage=...) --
+# Cloudinary cannot serve a video that was uploaded as an image.
+if USE_CLOUDINARY:
+    _DEFAULT_FILE_STORAGE = 'config.storages.OptimizedImageCloudinaryStorage'
+else:
+    _DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
+
+# Django 5.1 removed DEFAULT_FILE_STORAGE and STATICFILES_STORAGE; both are now
+# keys in STORAGES. The old STATICFILES_STORAGE line that used to live here was
+# being silently ignored, so whitenoise's compression was never actually on.
+# Manifest storage is only safe once collectstatic has written the manifest,
+# which is a deploy step -- under DEBUG there is none, so it stays off there.
+STORAGES = {
+    'default': {
+        'BACKEND': _DEFAULT_FILE_STORAGE,
+    },
+    'staticfiles': {
+        'BACKEND': (
+            'django.contrib.staticfiles.storage.StaticFilesStorage'
+            if DEBUG
+            else 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+        ),
+    },
+}
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 

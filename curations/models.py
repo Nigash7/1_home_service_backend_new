@@ -1,5 +1,7 @@
 from django.db import models
 
+from config.storages import video_storage
+
 
 class CurationSection(models.Model):
     title = models.CharField(max_length=200, help_text="e.g. Thoughtful curations")
@@ -22,7 +24,9 @@ class CurationItem(models.Model):
     )
     title = models.CharField(max_length=200, help_text="Text overlay on the card")
     thumbnail = models.ImageField(upload_to='curation_thumbnails/')
-    video = models.FileField(upload_to='curation_videos/')
+    # Uploaded as a Cloudinary video, not an image: only the video resource
+    # type can transcode and stream, and these files run to 100 MB+.
+    video = models.FileField(upload_to='curation_videos/', storage=video_storage)
     service = models.ForeignKey(
         'services.Service', on_delete=models.SET_NULL,
         null=True, blank=True, related_name='curation_items',
