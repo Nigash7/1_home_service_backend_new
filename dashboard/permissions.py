@@ -104,6 +104,9 @@ PERMISSION_GROUPS = [
          'Open the reports page and its revenue figures.'),
     ]),
     ('System', [
+        ('system.maps', 'Map settings',
+         'Choose between the free map and Google Maps, and hold the '
+         'Google API key.'),
         ('system.roles', 'Manage roles',
          'Create roles and choose what each one can reach.'),
         ('system.staff', 'Manage dashboard users',
@@ -289,6 +292,7 @@ URL_PERMISSIONS = {
     'reports': 'reports.view',
 
     # System
+    'map_settings': 'system.maps',
     'roles_list': 'system.roles',
     'role_add': 'system.roles',
     'role_edit': 'system.roles',

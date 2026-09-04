@@ -1,0 +1,248 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}Maps{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    <div class="mb-6">
+        <h1 class="text-2xl font-bold text-gray-900">Maps</h1>
+        <p class="text-sm text-gray-500 mt-1">
+            One choice, three maps: the Vendors Map on the assignment centre, the
+            location picker on the vendor form, and &ldquo;Confirm Your Location&rdquo;
+            in the customer app.
+        </p>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm
+                {% if message.tags == 'error' %}bg-red-50 text-red-700
+                {% elif message.tags == 'warning' %}bg-amber-50 text-amber-800
+                {% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <!-- What is actually being drawn right now -->
+    <div class="mb-5 px-4 py-3 rounded-lg text-sm flex items-start gap-3
+        {% if map_settings.is_google %}bg-green-50 text-green-800{% else %}bg-gray-100 text-gray-700{% endif %}">
+        <svg class="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/>
+        </svg>
+        <div>
+            {% if map_settings.is_google %}
+                <span class="font-semibold">Google Maps is selected.</span>
+                The Vendors Map, the vendor location picker and the customer app
+                all draw with this key. Anything Google turns down falls back to
+                the free map on its own, rather than showing nothing.
+            {% elif map_settings.is_awaiting_key %}
+                <span class="font-semibold">Google Maps is selected but has no key.</span>
+                Maps are drawing the free basemap until one is pasted in below.
+            {% else %}
+                <span class="font-semibold">The free map is live.</span>
+                No API key, no Google Cloud project, nothing to pay.
+            {% endif %}
+        </div>
+    </div>
+
+    <form method="post" class="space-y-5">
+        {% csrf_token %}
+
+        <!-- The two options -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
+            <h2 class="font-bold text-gray-900">Which map to use</h2>
+
+            <label class="block cursor-pointer">
+                <input type="radio" name="provider" value="FREE" class="peer sr-only"
+                       {% if map_settings.provider != 'GOOGLE' %}checked{% endif %}>
+                <div class="rounded-xl border-2 border-gray-200 p-4 transition
+                            peer-checked:border-primary-600 peer-checked:bg-primary-50">
+                    <div class="flex items-center justify-between">
+                        <div class="font-semibold text-gray-900">Free map</div>
+                        <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                            No key needed
+                        </span>
+                    </div>
+                    <p class="text-sm text-gray-500 mt-1">
+                        Esri&rsquo;s World Street Map, with OpenStreetMap&rsquo;s
+                        Nominatim turning pins into addresses. Costs nothing and needs
+                        no account. Addresses come back rougher than Google&rsquo;s,
+                        especially for flats and newer streets.
+                    </p>
+                </div>
+            </label>
+
+            <label class="block cursor-pointer">
+                <input type="radio" name="provider" value="GOOGLE" class="peer sr-only"
+                       {% if map_settings.provider == 'GOOGLE' %}checked{% endif %}>
+                <div class="rounded-xl border-2 border-gray-200 p-4 transition
+                            peer-checked:border-primary-600 peer-checked:bg-primary-50">
+                    <div class="flex items-center justify-between">
+                        <div class="font-semibold text-gray-900">Google Maps</div>
+                        <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                            Billed by Google
+                        </span>
+                    </div>
+                    <p class="text-sm text-gray-500 mt-1">
+                        Google&rsquo;s own map and addresses, using the API key below.
+                        Needs a Google Cloud project with billing switched on &mdash;
+                        Google bills per map load, per tile and per address lookup.
+                    </p>
+                </div>
+            </label>
+        </div>
+
+        <!-- The key -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
+            <h2 class="font-bold text-gray-900">Google Maps API key</h2>
+
+            <div>
+                <input type="text" name="google_api_key" id="google-api-key"
+                       value="{{ map_settings.google_api_key }}"
+                       placeholder="AIza..." autocomplete="off" spellcheck="false"
+                       class="w-full px-4 py-2.5 font-mono text-sm border border-gray-300 rounded-lg
+                              focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                <p class="text-xs text-gray-500 mt-2">
+                    Kept even while the free map is selected, so switching back does
+                    not mean pasting it again. Empty the box to remove it.
+                </p>
+            </div>
+
+            <div class="rounded-lg bg-blue-50 text-blue-900 text-sm px-4 py-3 space-y-2">
+                <p class="font-semibold">Enable these three APIs on the key</p>
+                <ul class="list-disc list-inside space-y-1 text-blue-800">
+                    <li><span class="font-semibold">Maps JavaScript API</span> &mdash; the maps on this dashboard</li>
+                    <li><span class="font-semibold">Map Tiles API</span> &mdash; the map in the customer app</li>
+                    <li><span class="font-semibold">Geocoding API</span> &mdash; turning a dropped pin into an address</li>
+                </ul>
+                <p class="text-blue-800">
+                    Each is switched on separately in Google Cloud, and a key with
+                    only some of them enabled is the usual reason part of this works
+                    and part does not. Saving below reports on each one.
+                </p>
+            </div>
+
+            <div class="rounded-lg bg-amber-50 text-amber-900 text-sm px-4 py-3">
+                <p class="font-semibold">Restrict this key in Google Cloud</p>
+                <p class="mt-1 text-amber-800">
+                    A map key is read by the browser and by the phone, so it can
+                    always be seen &mdash; that is true of every map on the web, not
+                    only this one. What stops somebody else spending it is the
+                    restriction: set an HTTP referrer restriction for this
+                    dashboard&rsquo;s domain and an API restriction to the three APIs
+                    above, and set a budget alert while you are in there.
+                </p>
+            </div>
+        </div>
+
+        {% if key_checks %}
+        <!-- Result of the check that ran when the key was saved -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <h2 class="font-bold text-gray-900 mb-3">What Google said about this key</h2>
+            <div class="space-y-3">
+                {% for check in key_checks %}
+                <div class="flex items-start gap-3">
+                    {% if check.ok %}
+                    <span class="w-5 h-5 rounded-full bg-green-100 text-green-700 flex items-center justify-center flex-shrink-0 text-xs font-bold">&check;</span>
+                    {% else %}
+                    <span class="w-5 h-5 rounded-full bg-red-100 text-red-700 flex items-center justify-center flex-shrink-0 text-xs font-bold">&times;</span>
+                    {% endif %}
+                    <div>
+                        <div class="text-sm font-semibold text-gray-900">{{ check.name }}</div>
+                        <div class="text-sm {% if check.ok %}text-gray-500{% else %}text-red-600{% endif %}">{{ check.detail }}</div>
+                    </div>
+                </div>
+                {% endfor %}
+                <div class="flex items-start gap-3">
+                    <span id="js-api-badge"
+                          class="w-5 h-5 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center flex-shrink-0 text-xs font-bold">&hellip;</span>
+                    <div>
+                        <div class="text-sm font-semibold text-gray-900">Maps JavaScript API</div>
+                        <div id="js-api-detail" class="text-sm text-gray-500">
+                            Only a browser can test this one &mdash; loading the preview below.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="flex justify-end">
+            <button type="submit"
+                    class="px-6 py-2.5 bg-primary-600 text-white font-semibold rounded-lg hover:bg-primary-700 transition">
+                Save
+            </button>
+        </div>
+    </form>
+
+    {% if map_settings.is_google %}
+    <!-- Live proof. A key the JavaScript API refuses leaves this grey and makes
+         Google call gm_authFailure, which is caught below. -->
+    <div class="mt-6 bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <h2 class="font-bold text-gray-900 mb-1">Preview</h2>
+        <p class="text-sm text-gray-500 mb-4">
+            Drawn right now with the saved key, the same way the Vendors Map draws it.
+        </p>
+        <div id="preview-map" class="w-full h-64 rounded-lg border border-gray-200 bg-gray-100"></div>
+        <p id="preview-error" class="hidden mt-3 text-sm text-red-600"></p>
+    </div>
+    {% endif %}
+</div>
+
+{% if map_settings.is_google %}
+<script>
+    // Google calls this by name when it turns the key down. It is the only
+    // signal the JavaScript API gives -- the map itself just stays grey.
+    window.gm_authFailure = function () {
+        var message = 'Google turned this key down for the Maps JavaScript API. ' +
+            'Check that the API is enabled on it, and that this dashboard domain ' +
+            'is in the key HTTP referrer restrictions.';
+        var badge = document.getElementById('js-api-badge');
+        var detail = document.getElementById('js-api-detail');
+        if (badge) {
+            badge.className = 'w-5 h-5 rounded-full bg-red-100 text-red-700 flex items-center justify-center flex-shrink-0 text-xs font-bold';
+            badge.dataset.state = 'failed';
+            badge.innerHTML = '&times;';
+        }
+        if (detail) {
+            detail.className = 'text-sm text-red-600';
+            detail.textContent = message;
+        }
+        var error = document.getElementById('preview-error');
+        if (error) {
+            error.textContent = message;
+            error.classList.remove('hidden');
+        }
+    };
+
+    function initPreviewMap() {
+        var host = document.getElementById('preview-map');
+        if (host && window.google && window.google.maps) {
+            new google.maps.Map(host, {
+                center: { lat: 13.0827, lng: 80.2707 },
+                zoom: 11,
+                mapTypeControl: false,
+                streetViewControl: false,
+            });
+        }
+
+        // gm_authFailure lands after this callback, so wait before calling it a
+        // pass rather than flashing a tick and taking it back.
+        setTimeout(function () {
+            var badge = document.getElementById('js-api-badge');
+            var detail = document.getElementById('js-api-detail');
+            if (!badge || badge.dataset.state === 'failed') { return; }
+            badge.className = 'w-5 h-5 rounded-full bg-green-100 text-green-700 flex items-center justify-center flex-shrink-0 text-xs font-bold';
+            badge.innerHTML = '&check;';
+            if (detail) {
+                detail.className = 'text-sm text-gray-500';
+                detail.textContent = 'Drawing the maps on this dashboard.';
+            }
+        }, 1500);
+    }
+</script>
+<script async
+        src="https://maps.googleapis.com/maps/api/js?key={{ map_settings.key|urlencode }}&callback=initPreviewMap&loading=async"></script>
+{% endif %}
+{% endblock %}

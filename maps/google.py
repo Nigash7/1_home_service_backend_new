@@ -1,0 +1,176 @@
+"""
+Every outbound call to Google Maps Platform lives here.
+
+Three of its APIs are used, and they have to be enabled separately on the same
+key, which is the single most common reason a pasted key half-works:
+
+  Maps JavaScript API  -- the dashboard's own maps, loaded in the browser.
+  Map Tiles API        -- raster tiles the customer app draws in flutter_map.
+  Geocoding API        -- turning the pin's lat/long into a street address.
+
+Nothing here raises: a map that cannot reach Google falls back to the free
+one rather than taking a page down with it.
+"""
+
+import logging
+from datetime import datetime, timedelta, timezone as dt_timezone
+
+import requests
+from django.utils import timezone
+
+logger = logging.getLogger(__name__)
+
+CREATE_SESSION_URL = 'https://tile.googleapis.com/v1/createSession'
+GEOCODE_URL = 'https://maps.googleapis.com/maps/api/geocode/json'
+
+TIMEOUT = 8
+
+
+class GoogleMapsError(Exception):
+    """Google answered, and the answer was no. Carries what it said."""
+
+
+# ---------------------------------------------------------------------------
+# Map Tiles API
+# ---------------------------------------------------------------------------
+
+def create_tile_session(api_key, map_type='roadmap', language='en-US', region='IN'):
+    """
+    Ask for a Map Tiles session token.
+
+    Returns (token, expires_at). Raises GoogleMapsError with Google's own
+    wording when the key is rejected, so the dashboard can show the admin the
+    real reason rather than "something went wrong".
+    """
+    try:
+        response = requests.post(
+            CREATE_SESSION_URL,
+            params={'key': api_key},
+            json={
+                'mapType': map_type,
+                'language': language,
+                'region': region,
+                # Retina tiles: phones are high-density, and a 1x tile on one
+                # renders roads and labels hairline-thin.
+                'highDpi': True,
+                'scale': 'scaleFactor2x',
+            },
+            timeout=TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        raise GoogleMapsError(f'Could not reach Google ({exc.__class__.__name__}).')
+
+    if response.status_code != 200:
+        raise GoogleMapsError(_error_text(response))
+
+    data = response.json()
+    token = data.get('session')
+    if not token:
+        raise GoogleMapsError('Google returned no session token.')
+
+    # `expiry` is a unix timestamp as a string, roughly two weeks out. An hour
+    # is shaved off so a token is never handed to an app moments before it dies.
+    try:
+        expires_at = datetime.fromtimestamp(
+            int(data['expiry']) - 3600, tz=dt_timezone.utc,
+        )
+    except (KeyError, TypeError, ValueError):
+        expires_at = timezone.now() + timedelta(days=1)
+
+    return token, expires_at
+
+
+# ---------------------------------------------------------------------------
+# Geocoding API
+# ---------------------------------------------------------------------------
+
+def reverse_geocode(api_key, latitude, longitude, language='en'):
+    """A readable address for a point, or None when Google has nothing."""
+    try:
+        response = requests.get(
+            GEOCODE_URL,
+            params={
+                'latlng': f'{latitude},{longitude}',
+                'key': api_key,
+                'language': language,
+            },
+            timeout=TIMEOUT,
+        )
+        data = response.json()
+    except (requests.RequestException, ValueError) as exc:
+        raise GoogleMapsError(f'Could not reach Google ({exc.__class__.__name__}).')
+
+    status = data.get('status')
+    if status == 'ZERO_RESULTS':
+        return None
+    if status != 'OK':
+        raise GoogleMapsError(
+            data.get('error_message') or f'Geocoding API said {status}.'
+        )
+
+    results = data.get('results') or []
+    if not results:
+        return None
+    return results[0].get('formatted_address')
+
+
+# ---------------------------------------------------------------------------
+# Key diagnostics, for the dashboard settings page
+# ---------------------------------------------------------------------------
+
+def check_key(api_key):
+    """
+    Try the two APIs that can be tested from a server and report on each.
+
+    Returns [{'name', 'ok', 'detail'}, ...]. The Maps JavaScript API is not in
+    the list: it only exists in a browser, so the settings page tests that one
+    by drawing a real map with the key and listening for Google's rejection.
+    """
+    checks = []
+
+    try:
+        create_tile_session(api_key)
+    except GoogleMapsError as exc:
+        checks.append({
+            'name': 'Map Tiles API',
+            'ok': False,
+            'detail': str(exc),
+        })
+    else:
+        checks.append({
+            'name': 'Map Tiles API',
+            'ok': True,
+            'detail': 'Serving tiles to the customer app.',
+        })
+
+    try:
+        # Chennai. Any point does; this only has to prove the key is allowed.
+        reverse_geocode(api_key, 13.0827, 80.2707)
+    except GoogleMapsError as exc:
+        checks.append({
+            'name': 'Geocoding API',
+            'ok': False,
+            'detail': str(exc),
+        })
+    else:
+        checks.append({
+            'name': 'Geocoding API',
+            'ok': True,
+            'detail': 'Turning map pins into addresses.',
+        })
+
+    return checks
+
+
+def _error_text(response):
+    """Google's own error message when there is one, else the status code."""
+    try:
+        payload = response.json()
+    except ValueError:
+        return f'Google answered {response.status_code}.'
+
+    error = payload.get('error') or {}
+    message = error.get('message') or payload.get('error_message')
+    if message:
+        return message
+    return f'Google answered {response.status_code}.'

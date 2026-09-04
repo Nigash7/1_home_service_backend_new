@@ -446,41 +446,102 @@ document.addEventListener('DOMContentLoaded', function () {
 </script>
     </div>
 </div>
-{% endblock %}
 
+<!-- Location picker. Leaflet or Google, decided by Settings -> Maps. Both
+     write the clicked point straight into the lat/lng inputs above.
+
+     This block used to sit past the close of the content block, where Django
+     drops it, so the picker never drew at all. Keep it inside. -->
+<script>
+    // Default centre: whatever the form already holds, else Chennai.
+    function pickerStart() {
+        var latInput = document.getElementById('lat-input');
+        var lngInput = document.getElementById('lng-input');
+        return {
+            lat: parseFloat(latInput.value) || 13.0827,
+            lng: parseFloat(lngInput.value) || 80.2707,
+            hasPoint: !!(latInput.value && lngInput.value),
+        };
+    }
+
+    function pickerRecord(lat, lng) {
+        document.getElementById('lat-input').value = lat.toFixed(6);
+        document.getElementById('lng-input').value = lng.toFixed(6);
+    }
+</script>
+
+{% if map_settings.is_google %}
+<script>
+    function initPickerMap() {
+        var start = pickerStart();
+        var map = new google.maps.Map(document.getElementById('picker-map'), {
+            center: { lat: start.lat, lng: start.lng },
+            zoom: 12,
+            mapTypeControl: false,
+            streetViewControl: false,
+            fullscreenControl: false,
+        });
+
+        var marker = null;
+        if (start.hasPoint) {
+            marker = new google.maps.Marker({
+                position: { lat: start.lat, lng: start.lng },
+                map: map,
+            });
+        }
+
+        map.addListener('click', function (event) {
+            var point = event.latLng;
+            pickerRecord(point.lat(), point.lng());
+            if (marker) {
+                marker.setPosition(point);
+            } else {
+                marker = new google.maps.Marker({ position: point, map: map });
+            }
+        });
+    }
+
+    // A refused key leaves a grey box and no error, so put one there.
+    window.gm_authFailure = function () {
+        var host = document.getElementById('picker-map');
+        if (!host) { return; }
+        host.innerHTML =
+            '<div class="h-full flex items-center justify-center text-center p-6 text-sm text-red-600">' +
+            'Google turned the Maps API key down. Open Settings &rarr; Maps to check it, ' +
+            'or type the latitude and longitude above by hand.' +
+            '</div>';
+    };
+</script>
+<script async
+        src="https://maps.googleapis.com/maps/api/js?key={{ map_settings.key|urlencode }}&callback=initPickerMap&loading=async"></script>
+{% else %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
-        const latInput = document.getElementById('lat-input');
-        const lngInput = document.getElementById('lng-input');
-
-        // Default center: Chennai
-        let startLat = parseFloat(latInput.value) || 13.0827;
-        let startLng = parseFloat(lngInput.value) || 80.2707;
-
-        const map = L.map('picker-map').setView([startLat, startLng], 12);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap'
+        var start = pickerStart();
+        var map = L.map('picker-map').setView([start.lat, start.lng], 12);
+        // openstreetmap.org's own tiles answer 418 "Access blocked" to apps,
+        // so this draws the same keyless basemap as everything else.
+        L.tileLayer('{{ map_settings.FREE_TILE_URL }}', {
+            attribution: '{{ map_settings.FREE_ATTRIBUTION }}',
+            maxZoom: {{ map_settings.FREE_MAX_ZOOM }},
         }).addTo(map);
 
-        let marker = null;
-        if (latInput.value && lngInput.value) {
-            marker = L.marker([startLat, startLng]).addTo(map);
-        }
+        var marker = start.hasPoint ? L.marker([start.lat, start.lng]).addTo(map) : null;
 
         map.on('click', function (e) {
-            const { lat, lng } = e.latlng;
-            latInput.value = lat.toFixed(6);
-            lngInput.value = lng.toFixed(6);
+            pickerRecord(e.latlng.lat, e.latlng.lng);
             if (marker) {
-                marker.setLatLng([lat, lng]);
+                marker.setLatLng(e.latlng);
             } else {
-                marker = L.marker([lat, lng]).addTo(map);
+                marker = L.marker(e.latlng).addTo(map);
             }
         });
 
         // Fix map rendering inside forms
-        setTimeout(() => map.invalidateSize(), 200);
+        setTimeout(function () { map.invalidateSize(); }, 200);
     });
 </script>
+{% endif %}
+{% endblock %}

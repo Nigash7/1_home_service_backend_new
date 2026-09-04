@@ -89,6 +89,7 @@ INSTALLED_APPS = [
     'branding',
     'tenders',
     'subscriptions',
+    'maps',
 ]
 
 MIDDLEWARE = [
@@ -226,6 +227,9 @@ TEMPLATES = [
                 # into every template, so the sidebar can hide what a role
                 # cannot open.
                 'dashboard.context_processors.admin_user',
+                # Which map the dashboard's map pages should draw, and the
+                # Google key when Google is the one chosen.
+                'dashboard.context_processors.map_settings',
             ],
         },
     },

@@ -298,67 +298,159 @@
         </div> -->
     </div>
 </div>
+<script>
+    /*
+     * Vendors Map pins, drawn below by whichever map Settings -> Maps selects.
+     * Both branches read the same two arrays, so only the drawing differs.
+     */
+    var vendorPins = {{ vendor_pins_json|safe }};
+    var bookingPins = {{ booking_pins_json|safe }};
+    var pinColors = { available: '#22c55e', busy: '#f97316', offline: '#9ca3af' };
+
+    // Names and categories reach the popup as text, never as markup.
+    function escapeHtml(value) {
+        var holder = document.createElement('div');
+        holder.textContent = value == null ? '' : String(value);
+        return holder.innerHTML;
+    }
+
+    // First vendor, first booking, or Chennai.
+    function startingCenter() {
+        if (vendorPins.length > 0) return { lat: vendorPins[0].lat, lng: vendorPins[0].lng };
+        if (bookingPins.length > 0) return { lat: bookingPins[0].lat, lng: bookingPins[0].lng };
+        return { lat: 13.0827, lng: 80.2707 };
+    }
+</script>
+
+{% if map_settings.is_google %}
+<script>
+    // Called by name once the Maps JavaScript API has loaded.
+    function initVendorsMap() {
+        var center = startingCenter();
+        var map = new google.maps.Map(document.getElementById('vendors-map'), {
+            center: center,
+            zoom: 12,
+            mapTypeControl: false,
+            streetViewControl: false,
+            fullscreenControl: false,
+        });
+        var info = new google.maps.InfoWindow();
+        var bounds = new google.maps.LatLngBounds();
+
+        function openPopup(marker, html) {
+            marker.addListener('click', function () {
+                info.setContent(html);
+                info.open({ anchor: marker, map: map });
+            });
+        }
+
+        vendorPins.forEach(function (v) {
+            var marker = new google.maps.Marker({
+                position: { lat: v.lat, lng: v.lng },
+                map: map,
+                title: v.name,
+                icon: {
+                    path: google.maps.SymbolPath.CIRCLE,
+                    scale: 9,
+                    fillColor: pinColors[v.status] || pinColors.offline,
+                    fillOpacity: 0.9,
+                    strokeColor: '#ffffff',
+                    strokeWeight: 2,
+                },
+            });
+            openPopup(marker,
+                '<strong>' + escapeHtml(v.name) + '</strong><br>' +
+                'Status: ' + escapeHtml(v.status) + '<br>' +
+                'Active jobs: ' + escapeHtml(v.jobs) + '<br>' +
+                '<a href="/vendors/' + encodeURIComponent(v.id) + '/">View vendor &rarr;</a>');
+            bounds.extend(marker.getPosition());
+        });
+
+        bookingPins.forEach(function (b) {
+            var marker = new google.maps.Marker({
+                position: { lat: b.lat, lng: b.lng },
+                map: map,
+                title: 'Booking #' + b.id,
+            });
+            openPopup(marker,
+                '<strong>Booking #' + escapeHtml(b.id) + '</strong><br>' +
+                escapeHtml(b.category) + '<br>' +
+                '<a href="/bookings/' + encodeURIComponent(b.id) + '/">Assign vendor &rarr;</a>');
+            bounds.extend(marker.getPosition());
+        });
+
+        if (!bounds.isEmpty()) {
+            map.fitBounds(bounds, 40);
+            // fitBounds settles asynchronously, so the zoom cap has to wait for
+            // it rather than being read straight after the call.
+            google.maps.event.addListenerOnce(map, 'idle', function () {
+                if (map.getZoom() > 13) { map.setZoom(13); }
+            });
+        }
+    }
+
+    // Google turns a key down silently -- the map just stays grey -- so say so.
+    window.gm_authFailure = function () {
+        var host = document.getElementById('vendors-map');
+        if (!host) { return; }
+        host.innerHTML =
+            '<div class="h-full flex items-center justify-center text-center p-6 text-sm text-red-600">' +
+            'Google turned the Maps API key down. Open Settings &rarr; Maps to check it.' +
+            '</div>';
+    };
+</script>
+<script async
+        src="https://maps.googleapis.com/maps/api/js?key={{ map_settings.key|urlencode }}&callback=initVendorsMap&loading=async"></script>
+{% else %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
-        const vendors = {{ vendor_pins_json|safe }};
-        const bookings = {{ booking_pins_json|safe }};
-
-        // Center: first vendor, first booking, or Chennai default
-        let center = [13.0827, 80.2707];
-        if (vendors.length > 0) center = [vendors[0].lat, vendors[0].lng];
-        else if (bookings.length > 0) center = [bookings[0].lat, bookings[0].lng];
-
-        const map = L.map('vendors-map').setView(center, 12);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-            attribution: '© OpenStreetMap © CARTO',
-            subdomains: 'abcd',
-            maxZoom: 20,
+        var center = startingCenter();
+        var map = L.map('vendors-map').setView([center.lat, center.lng], 12);
+        // Same keyless basemap the customer app draws, from one constant.
+        L.tileLayer('{{ map_settings.FREE_TILE_URL }}', {
+            attribution: '{{ map_settings.FREE_ATTRIBUTION }}',
+            maxZoom: {{ map_settings.FREE_MAX_ZOOM }},
         }).addTo(map);
 
-        const colors = { available: '#22c55e', busy: '#f97316', offline: '#9ca3af' };
-
         // Vendor pins
-        vendors.forEach(v => {
-            const circle = L.circleMarker([v.lat, v.lng], {
+        vendorPins.forEach(function (v) {
+            L.circleMarker([v.lat, v.lng], {
                 radius: 9,
-                fillColor: colors[v.status],
+                fillColor: pinColors[v.status],
                 color: '#fff',
                 weight: 2,
                 fillOpacity: 0.9,
-            }).addTo(map);
-            circle.bindPopup(
-                `<strong>${v.name}</strong><br>` +
-                `Status: ${v.status}<br>` +
-                `Active jobs: ${v.jobs}<br>` +
-                `<a href="/vendors/${v.id}/">View vendor →</a>`
+            }).addTo(map).bindPopup(
+                '<strong>' + escapeHtml(v.name) + '</strong><br>' +
+                'Status: ' + escapeHtml(v.status) + '<br>' +
+                'Active jobs: ' + escapeHtml(v.jobs) + '<br>' +
+                '<a href="/vendors/' + encodeURIComponent(v.id) + '/">View vendor &rarr;</a>'
             );
         });
 
-        // Booking pins (pending) — shown as blue markers
-        bookings.forEach(b => {
-            const m = L.marker([b.lat, b.lng]).addTo(map);
-            m.bindPopup(
-                `<strong>Booking #${b.id}</strong><br>` +
-                `${b.category}<br>` +
-                `<a href="/bookings/${b.id}/">Assign vendor →</a>`
+        // Booking pins (pending) -- shown as blue markers
+        bookingPins.forEach(function (b) {
+            L.marker([b.lat, b.lng]).addTo(map).bindPopup(
+                '<strong>Booking #' + escapeHtml(b.id) + '</strong><br>' +
+                escapeHtml(b.category) + '<br>' +
+                '<a href="/bookings/' + encodeURIComponent(b.id) + '/">Assign vendor &rarr;</a>'
             );
         });
 
         // Fit bounds to all points
-        const allPoints = [
-            ...vendors.map(v => [v.lat, v.lng]),
-            ...bookings.map(b => [b.lat, b.lng]),
-        ];
+        var allPoints = vendorPins.map(function (v) { return [v.lat, v.lng]; })
+            .concat(bookingPins.map(function (b) { return [b.lat, b.lng]; }));
         if (allPoints.length > 0) {
             map.fitBounds(allPoints, { padding: [40, 40], maxZoom: 13 });
         }
 
         // Force map to recalculate size after render
-        setTimeout(() => map.invalidateSize(), 300);
+        setTimeout(function () { map.invalidateSize(); }, 300);
     });
 </script>
+{% endif %}
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
@@ -383,6 +475,5 @@
             });
         }
     });
-</script>
 </script>
 {% endblock %}

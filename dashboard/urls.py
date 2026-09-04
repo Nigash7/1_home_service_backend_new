@@ -187,6 +187,9 @@ urlpatterns = [
     path('admin-users/<int:user_id>/password/', views.admin_user_password_view, name='admin_user_password'),
     path('admin-users/<int:user_id>/delete/', views.admin_user_delete_view, name='admin_user_delete'),
 
+    # Which map every screen draws, and the Google key behind it
+    path('settings/maps/', views.map_settings_view, name='map_settings'),
+
     # Sign-in log and lockouts
     path('login-security/', views.login_security_view, name='login_security'),
     path('login-security/unlock/', views.login_security_unlock_view, name='login_security_unlock'),

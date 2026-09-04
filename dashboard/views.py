@@ -27,6 +27,8 @@ from tenders.models import (
 from tenders import notifications as tender_notify
 from tenders import services as tender_services
 from vendors.models import Vendor, VendorDocument, set_vendor_service_regions
+from maps.models import MapSettings
+from maps import google as google_maps
 from vendors.regions import INDIAN_STATES, state_key
 from services.pricing import PricingType
 from tenders.project_types import ProjectType
@@ -5077,3 +5079,79 @@ def subscription_request_reject_view(request, request_id):
         f'"{upgrade_request.plan.name}".',
     )
     return redirect('subscription_requests_list')
+
+
+# ---------------------------------------------------------------------------
+# Map settings
+# ---------------------------------------------------------------------------
+
+@admin_login_required
+def map_settings_view(request):
+    """
+    Which map the platform draws, and the Google key behind it.
+
+    One setting reaches three maps: the Vendors Map on the assignment centre,
+    the location picker on the vendor form, and "Confirm Your Location" in the
+    customer app. The app reads it over the API, so switching here needs no
+    new build of the app.
+
+    Saving a Google key runs it past Google straight away and shows what came
+    back per API, because a key that works for one Google API and not another
+    is the normal way this goes wrong.
+    """
+    map_settings = MapSettings.get_solo()
+    key_checks = []
+
+    if request.method == 'POST':
+        provider = request.POST.get('provider', MapSettings.Provider.FREE)
+        if provider not in MapSettings.Provider.values:
+            provider = MapSettings.Provider.FREE
+
+        api_key = (request.POST.get('google_api_key') or '').strip()
+        key_changed = api_key != map_settings.google_api_key
+        provider_changed = provider != map_settings.provider
+
+        map_settings.provider = provider
+        map_settings.google_api_key = api_key
+
+        # A cached tile session belongs to the key it was minted with, so any
+        # change to either end of that has to throw it away.
+        if key_changed or provider_changed:
+            map_settings.clear_tile_session()
+
+        map_settings.save()
+
+        if provider == MapSettings.Provider.GOOGLE and not api_key:
+            messages.error(
+                request,
+                'Saved, but Google Maps needs an API key. Until one is added '
+                'every map keeps drawing the free basemap.'
+            )
+        elif provider == MapSettings.Provider.GOOGLE:
+            key_checks = google_maps.check_key(api_key)
+            if all(check['ok'] for check in key_checks):
+                messages.success(
+                    request,
+                    'Saved. Google Maps is now drawing the Vendors Map, the '
+                    'vendor location picker and the customer app.'
+                )
+            else:
+                messages.warning(
+                    request,
+                    'Saved, but Google refused part of this key -- see the '
+                    'check below. Anything it refuses falls back to the free '
+                    'map on its own.'
+                )
+        else:
+            messages.success(request, 'Saved. Every map is on the free basemap.')
+
+        # Falls through to the render below rather than redirecting, so the
+        # key check stays on screen.
+
+    return render(request, 'dashboard/map_settings.html', {
+        'admin_user': request.admin_user,
+        'active_page': 'map_settings',
+        'map_settings': map_settings,
+        'key_checks': key_checks,
+        'free_attribution': MapSettings.FREE_ATTRIBUTION,
+    })
