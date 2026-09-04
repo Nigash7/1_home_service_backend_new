@@ -39,6 +39,26 @@ class SendOTPSerializer(serializers.Serializer):
         return otp
 
 
+def _available_username(phone_number):
+    """
+    A free username for a new customer account.
+
+    The phone number doubles as the username, but usernames are unique across
+    every role and an admin may already have given this one to a vendor -- the
+    same person, very often, since one number can hold both a customer and a
+    vendor account. Falling back to a suffix keeps sign-in working instead of
+    failing on the clash; nothing reads meaning out of a customer's username,
+    only their phone and their role.
+    """
+    if not User.objects.filter(username=phone_number).exists():
+        return phone_number
+
+    suffix = 2
+    while User.objects.filter(username=f'{phone_number}-{suffix}').exists():
+        suffix += 1
+    return f'{phone_number}-{suffix}'
+
+
 class VerifyOTPSerializer(serializers.Serializer):
     """
     Verifies the OTP. If this phone number has no account yet, creates one
@@ -122,7 +142,7 @@ class VerifyOTPSerializer(serializers.Serializer):
         except User.DoesNotExist:
             # First time this phone number has verified an OTP -> create the account.
             user = User.objects.create_user(
-                username=phone_number,  # phone number doubles as the username internally
+                username=_available_username(phone_number),
                 phone_number=phone_number,
                 first_name=self.validated_data.get('first_name', ''),
                 last_name=self.validated_data.get('last_name', ''),

@@ -2,6 +2,9 @@ from django.db import models
 from django.conf import settings
 
 from config.storages import private_storage
+from .regions import (
+    canonical_state, district_label, normalize_region, state_key,
+)
 
 
 class VendorQuerySet(models.QuerySet):
@@ -47,6 +50,69 @@ class VendorQuerySet(models.QuerySet):
             pk__in=narrowed
         )
         return self.filter(explicit | category_wide).distinct()
+
+    def bookable(self):
+        """
+        Vendors who could actually take a job right now -- verified, on duty
+        and not marked offline. What a customer is really asking about when
+        they ask whether a service can be had where they live.
+        """
+        return self.filter(
+            verification_status='VERIFIED', is_available=True
+        ).exclude(status='OFFLINE')
+
+    def serving_area(self, state, district=''):
+        """
+        Vendors who work in this place.
+
+        Coverage is most-specific-wins, the same shape as the category
+        narrowing above it:
+
+          no rows at all          every state
+          a row with no district  the whole of that state
+          rows with districts     only those districts of that state
+
+        So naming a state is how a vendor narrows themselves to it, and naming
+        districts is how they narrow themselves inside it. Nothing named is
+        never "nowhere" -- it keeps every vendor recorded before coverage
+        existed reachable.
+
+        A customer whose district we do not know is matched on their state
+        alone: missing data must not be the thing that hides a vendor.
+        """
+        key = state_key(state)
+        if not key:
+            return self.none()
+
+        here = models.Q(service_regions__state_key=key)
+        district_key = normalize_region(district)
+        if district_key:
+            # The whole-state row, or one naming this district. Both sit in
+            # the same filter() call, so they must hold of the *same* row.
+            here &= models.Q(
+                service_regions__district_key__in=['', district_key]
+            )
+
+        return self.filter(
+            here | models.Q(service_regions__isnull=True)
+        ).distinct()
+
+    def outside_area(self, state, district=''):
+        """
+        Vendors who said where they work and left this place out -- the ones
+        the customer app offers when nobody covers the customer's own.
+
+        The mirror of serving_area, so a vendor is never in both lists.
+        """
+        if not state_key(state):
+            return self.none()
+
+        serving = self.model._default_manager.serving_area(
+            state, district
+        ).values('pk')
+        return self.exclude(service_regions__isnull=True).exclude(
+            pk__in=serving
+        ).distinct()
 
     def with_review_stats(self):
         """Annotates the rating figures every pro vendor card shows."""
@@ -104,6 +170,18 @@ class Vendor(models.Model):
         max_length=255, help_text="e.g. area/zone/pincode this vendor covers"
     )
     address = models.TextField(blank=True)
+
+    # Where the vendor themselves is based. Shown on their card so a customer
+    # offered a vendor from outside their own state can see where that vendor
+    # actually is. Where they *work* is a separate list --
+    # VendorServiceRegion -- because the two are not the same thing: a vendor
+    # based in Ernakulam may cover three districts, or none but their own.
+    state = models.CharField(
+        max_length=100, blank=True, help_text="State the vendor is based in"
+    )
+    district = models.CharField(
+        max_length=100, blank=True, help_text="District the vendor is based in"
+    )
 
     verification_status = models.CharField(
         max_length=10,
@@ -257,6 +335,67 @@ class Vendor(models.Model):
         # Keep the first occurrence of each label, order intact.
         return list(dict.fromkeys(labels))
 
+    def serves(self, state, district=''):
+        """
+        Whether this vendor works in this place. Mirrors
+        VendorQuerySet.serving_area for code that already holds the vendor.
+
+        Nothing named means everywhere; a state named with no district means
+        the whole of it; districts named mean only those. A district we were
+        not told is matched on the state alone.
+        """
+        rows = list(self.service_regions.all())
+        if not rows:
+            return True
+
+        key = state_key(state)
+        if not key:
+            return False
+
+        here = [row for row in rows if row.state_key == key]
+        if not here:
+            return False
+        if any(not row.district_key for row in here):
+            return True
+
+        district_key = normalize_region(district)
+        if not district_key:
+            # They cover part of this state and we cannot tell which part.
+            # Offering them beats hiding them over an address we never asked
+            # the customer to fill in.
+            return True
+
+        return any(row.district_key == district_key for row in here)
+
+    @property
+    def service_region_labels(self):
+        """
+        Where this vendor works, one label per state:
+        "Kerala — Ernakulam, Thrissur", or just "Kerala" for the whole of it.
+
+        Empty means every state.
+        """
+        by_state = {}
+        for row in self.service_regions.all():
+            by_state.setdefault(row.state, [])
+            if row.district:
+                by_state[row.state].append(row.district)
+
+        labels = []
+        for state, districts in by_state.items():
+            labels.append(
+                f"{state} — {', '.join(districts)}" if districts else state
+            )
+        return labels
+
+    @property
+    def location_label(self):
+        """
+        Where the vendor is based, as one line: "Ernakulam, Kerala". Empty
+        when neither has been recorded, so callers can skip the row entirely.
+        """
+        return ', '.join(part for part in (self.district, self.state) if part)
+
     @property
     def display_name(self):
         return self.user.get_full_name() or self.user.username
@@ -329,6 +468,103 @@ class Vendor(models.Model):
             return self.AvailabilityStatus.BUSY
 
         return self.AvailabilityStatus.AVAILABLE
+
+
+class VendorServiceRegion(models.Model):
+    """
+    One place a vendor has said they can take work in: a state, and
+    optionally a single district inside it.
+
+    A vendor with no rows covers every state. A row with no district covers
+    the whole of that state. Rows naming districts cover only those, so
+    naming districts is how a vendor narrows themselves inside a state they
+    already cover -- the same most-specific-wins shape the category,
+    subcategory and service coverage above it uses.
+
+    Both names are stored as they were typed and matched on their keys.
+    Customers type their own state and district by hand, so nobody should be
+    told their zone is uncovered over a capital letter.
+    """
+
+    vendor = models.ForeignKey(
+        Vendor, on_delete=models.CASCADE, related_name='service_regions'
+    )
+    state = models.CharField(max_length=100)
+    state_key = models.CharField(
+        max_length=100, db_index=True, editable=False,
+        help_text="Normalized form of `state`; set on save, never by hand.",
+    )
+    district = models.CharField(
+        max_length=100, blank=True,
+        help_text="Leave empty to cover the whole state.",
+    )
+    district_key = models.CharField(
+        max_length=100, blank=True, db_index=True, editable=False,
+        help_text="Normalized form of `district`; set on save, never by hand.",
+    )
+
+    class Meta:
+        ordering = ['state', 'district']
+        unique_together = ('vendor', 'state_key', 'district_key')
+
+    def __str__(self):
+        where = f"{self.state} — {self.district}" if self.district else self.state
+        return f"{self.vendor.display_name} — {where}"
+
+    def save(self, *args, **kwargs):
+        self.state = canonical_state(self.state)
+        self.state_key = state_key(self.state)
+        self.district = district_label(self.district)
+        self.district_key = normalize_region(self.district)
+        super().save(*args, **kwargs)
+
+
+def set_vendor_service_regions(vendor, entries):
+    """
+    Replaces where a vendor works with `entries`, the way `categories.set()`
+    replaces their categories.
+
+    `entries` may be plain state names, or (state, district) pairs -- a pair
+    with an empty district means the whole state. Every form that writes these
+    posts the whole list, so this is a full replace: a place left off is a
+    place the vendor no longer covers. Blanks and repeats are dropped, and an
+    empty list clears the rows, which puts the vendor back on every state.
+
+    A state named both on its own and with districts keeps only the
+    whole-state row -- the two say different things, and the wider one is
+    what the vendor asked for.
+    """
+    wanted = {}
+    for entry in entries or []:
+        state, district = entry if isinstance(entry, (tuple, list)) else (entry, '')
+        key = state_key(state)
+        if not key:
+            continue
+        wanted[(key, normalize_region(district))] = (
+            canonical_state(state), district_label(district),
+        )
+
+    # "The whole state" swallows any districts named alongside it.
+    whole_states = {key for key, district_key in wanted if not district_key}
+    wanted = {
+        (key, district_key): names
+        for (key, district_key), names in wanted.items()
+        if not district_key or key not in whole_states
+    }
+
+    for row in vendor.service_regions.all():
+        if (row.state_key, row.district_key) not in wanted:
+            row.delete()
+
+    existing = {
+        (row.state_key, row.district_key)
+        for row in vendor.service_regions.all()
+    }
+    for pair, (state, district) in wanted.items():
+        if pair not in existing:
+            VendorServiceRegion.objects.create(
+                vendor=vendor, state=state, district=district,
+            )
 
 
 class VendorDocument(models.Model):

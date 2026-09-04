@@ -28,18 +28,7 @@
             {% csrf_token %}
 
             <!-- Background image -->
-            <div>
-                <label class="block text-sm font-semibold text-gray-700 mb-2">Background Image *</label>
-                {% if is_edit and banner.background_image %}
-                    <div class="mb-3">
-                        <img src="{{ banner.background_image.url }}" alt="Current" class="w-full aspect-video rounded-xl object-cover border border-gray-200">
-                        <p class="text-xs text-gray-500 mt-1">Current image. Upload a new one to replace.</p>
-                    </div>
-                {% endif %}
-                <input type="file" name="background_image" accept="image/*" {% if not is_edit %}required{% endif %}
-                       class="w-full text-sm border border-gray-300 rounded-lg p-2 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary-100 file:text-primary-700 hover:file:bg-primary-200">
-                <p class="text-xs text-gray-500 mt-1">Recommended: wide landscape image (e.g. 1200×675)</p>
-            </div>
+            {% include "dashboard/_file_field.html" with name="background_image" label="Background Image *" current=banner.background_image removable=False required=True help="Recommended: wide landscape image (e.g. 1200x675)" %}
 
             <!-- Title -->
             <div>

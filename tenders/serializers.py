@@ -6,10 +6,37 @@ from .models import (
     Tender,
     TenderAttachment,
     TenderBid,
+    TenderConfirmationFee,
     TenderMilestone,
     TenderProgressPhoto,
     TenderProgressUpdate,
 )
+
+
+class TenderConfirmationFeeSerializer(serializers.ModelSerializer):
+    """
+    What the customer owes -- or has paid -- to confirm the bid they chose.
+
+    Read-only throughout. The amount is worked out on the server from the rate
+    the admin set; a fee the app could name would be a fee the app could set
+    to zero.
+    """
+
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    vendor_name = serializers.CharField(
+        source='bid.vendor.display_name', read_only=True
+    )
+    amount_paise = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = TenderConfirmationFee
+        fields = [
+            'id', 'tender', 'bid', 'vendor_name',
+            'percent', 'bid_amount', 'amount', 'amount_paise', 'currency',
+            'status', 'status_display', 'is_paid', 'is_open',
+            'razorpay_order_id', 'created_at', 'paid_at',
+        ]
+        read_only_fields = fields
 
 
 class TenderAttachmentSerializer(serializers.ModelSerializer):
@@ -138,24 +165,55 @@ class TenderListSerializer(serializers.ModelSerializer):
             'created_at', 'published_at', 'awarded_at', 'completed_at',
         ]
 
+    # A bid that is picked but not paid for is still one of the live quotes,
+    # so it counts here exactly as with_bid_stats() counts it.
+    LIVE_BID_STATUSES = [TenderBid.Status.SUBMITTED, TenderBid.Status.SELECTED]
+
+    def to_representation(self, instance):
+        """
+        Hides a held selection from the vendors.
+
+        PENDING_CONFIRMATION means the customer has picked someone and has not
+        yet paid to confirm it. To a vendor who bid, that word would say a
+        decision has been made -- when it may still be released and the tender
+        reopened. They see OPEN, with `is_bidding_open` false, which is the
+        same shape as a tender whose deadline has simply passed.
+        """
+        data = super().to_representation(instance)
+        if (
+            instance.status == Tender.Status.PENDING_CONFIRMATION
+            and self._request_vendor() is not None
+        ):
+            data['status'] = Tender.Status.OPEN.value
+            data['status_display'] = Tender.Status.OPEN.label
+        return data
+
+    def _request_vendor(self):
+        """The vendor reading this, or None when it is a customer or admin."""
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if user is None or not user.is_authenticated:
+            return None
+        return getattr(user, 'vendor_profile', None)
+
     # with_bid_stats() annotates these; the fallbacks keep the serializer
     # usable on a plain instance (a freshly created tender, say).
     def get_bid_count(self, obj):
         if hasattr(obj, 'bid_total'):
             return obj.bid_total
-        return obj.bids.filter(status=TenderBid.Status.SUBMITTED).count()
+        return obj.bids.filter(status__in=self.LIVE_BID_STATUSES).count()
 
     def get_lowest_bid(self, obj):
         if hasattr(obj, 'bid_low'):
             return obj.bid_low
-        return obj.bids.filter(status=TenderBid.Status.SUBMITTED).aggregate(
+        return obj.bids.filter(status__in=self.LIVE_BID_STATUSES).aggregate(
             low=Min('amount')
         )['low']
 
     def get_highest_bid(self, obj):
         if hasattr(obj, 'bid_high'):
             return obj.bid_high
-        return obj.bids.filter(status=TenderBid.Status.SUBMITTED).aggregate(
+        return obj.bids.filter(status__in=self.LIVE_BID_STATUSES).aggregate(
             high=Max('amount')
         )['high']
 
@@ -206,6 +264,31 @@ class TenderBidSerializer(serializers.ModelSerializer):
             'milestones', 'milestone_total',
             'status', 'status_display', 'created_at', 'updated_at', 'decided_at',
         ]
+
+    def to_representation(self, instance):
+        """
+        A held selection is the customer's business, not the vendor's.
+
+        SELECTED means the customer has picked this bid but not yet paid to
+        confirm it. Showing the vendor that word would have them ringing the
+        customer about a job they may not get -- and, if the selection is
+        released, one that never existed. They see it as still submitted,
+        which is exactly what it is until the fee lands.
+        """
+        data = super().to_representation(instance)
+        if (
+            instance.status == TenderBid.Status.SELECTED
+            and self._reader_is_vendor()
+        ):
+            data['status'] = TenderBid.Status.SUBMITTED.value
+            data['status_display'] = TenderBid.Status.SUBMITTED.label
+        return data
+
+    def _reader_is_vendor(self):
+        request = self.context.get('request')
+        return getattr(request, 'user', None) is not None and (
+            getattr(request.user, 'vendor_profile', None) is not None
+        )
 
     def get_vendor_phone(self, obj):
         """
@@ -350,6 +433,8 @@ class TenderDetailSerializer(TenderListSerializer):
     customer_phone = serializers.SerializerMethodField()
     my_bid = serializers.SerializerMethodField()
     review = serializers.SerializerMethodField()
+    confirmation_fee = serializers.SerializerMethodField()
+    confirmation_fee_percent = serializers.SerializerMethodField()
 
     class Meta(TenderListSerializer.Meta):
         fields = TenderListSerializer.Meta.fields + [
@@ -357,10 +442,40 @@ class TenderDetailSerializer(TenderListSerializer):
             'address_text', 'location_lat', 'location_lng',
             'customer_name', 'customer_phone',
             'attachments', 'awarded_bid', 'milestones', 'progress_updates',
-            'my_bid', 'review',
+            'my_bid', 'review', 'confirmation_fee', 'confirmation_fee_percent',
             'rejection_reason', 'cancellation_reason',
             'submitted_at', 'started_at', 'updated_at',
         ]
+
+    def get_confirmation_fee_percent(self, obj):
+        """
+        The rate a choice made right now would be charged at, so the app can
+        put a figure in front of the customer *before* they pick rather than
+        springing it on them afterwards.
+
+        Null for vendors, and null once there is nothing left to choose --
+        neither has a choice ahead of them.
+        """
+        if self._request_vendor() is not None:
+            return None
+        if obj.status not in (Tender.Status.OPEN, Tender.Status.PENDING_CONFIRMATION):
+            return None
+        from .models import TenderSettings
+
+        return TenderSettings.get_solo().effective_percent
+
+    def get_confirmation_fee(self, obj):
+        """
+        The fee the customer owes to confirm their choice, so the app can put
+        a Pay button on the tender itself and not only on the bids screen.
+
+        Customer-only: what they were charged to hire someone is not
+        something the vendors bidding are shown.
+        """
+        if self._request_vendor() is not None:
+            return None
+        fee = obj.pending_confirmation_fee
+        return TenderConfirmationFeeSerializer(fee).data if fee else None
 
     def get_customer_name(self, obj):
         return str(obj.customer)
@@ -394,14 +509,6 @@ class TenderDetailSerializer(TenderListSerializer):
             'comment': review.comment,
             'created_at': review.created_at,
         }
-
-    def _request_vendor(self):
-        """The vendor reading this, or None when it is a customer or admin."""
-        request = self.context.get('request')
-        user = getattr(request, 'user', None)
-        if user is None or not user.is_authenticated:
-            return None
-        return getattr(user, 'vendor_profile', None)
 
 
 class TenderReviewSerializer(serializers.Serializer):

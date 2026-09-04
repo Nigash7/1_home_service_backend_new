@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
@@ -39,3 +40,30 @@ class OTPRequest(models.Model):
 
     def __str__(self):
         return f"OTP for {self.phone_number} (verified={self.is_verified})"
+
+
+class EmailOTPRequest(models.Model):
+    """
+    A one-time-password sent to an EMAIL address so a signed-in customer can
+    prove the address on their profile is really theirs.
+
+    Deliberately separate from OTPRequest: that one is the phone code that
+    creates the account and so has to work for a stranger, while this one only
+    ever runs for somebody already logged in. Tying each row to the user is
+    what stops one account from claiming another person's address.
+    """
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='email_otps'
+    )
+    email = models.EmailField(db_index=True)
+    code = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    is_verified = models.BooleanField(default=False)
+    attempts = models.PositiveSmallIntegerField(default=0)  # wrong-code tries against THIS otp
+
+    class Meta:
+        indexes = [models.Index(fields=['user', '-created_at'])]
+
+    def __str__(self):
+        return f"Email OTP for {self.email} (verified={self.is_verified})"

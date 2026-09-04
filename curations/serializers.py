@@ -11,6 +11,17 @@ class CurationItemSerializer(serializers.ModelSerializer):
         source='service.price', max_digits=10, decimal_places=2, default=None
     )
     service_description = serializers.CharField(source='service.description', default=None)
+    # The pricing fields keep their `service_` prefix like the rest of this
+    # payload, so a curated card can say "₹15 / sq ft" rather than a bare ₹15.
+    pricing_type = serializers.CharField(source='service.pricing_type', default=None)
+    price_label = serializers.CharField(source='service.price_label', default=None)
+    unit_label = serializers.CharField(source='service.unit_label', default=None)
+    measure_label = serializers.CharField(source='service.measure_label', default=None)
+    needs_quantity = serializers.BooleanField(source='service.needs_quantity', default=False)
+    allows_decimal_quantity = serializers.BooleanField(
+        source='service.allows_decimal_quantity', default=False
+    )
+    is_quote_only = serializers.BooleanField(source='service.is_quote_only', default=False)
     service_image = serializers.SerializerMethodField()
     category_id = serializers.SerializerMethodField()
     category_name = serializers.SerializerMethodField()
@@ -23,6 +34,8 @@ class CurationItemSerializer(serializers.ModelSerializer):
             'service_id', 'service_name', 'service_price',
             'service_description', 'service_image',
             'category_id', 'category_name', 'subcategory_id',
+            'pricing_type', 'price_label', 'unit_label', 'measure_label',
+            'needs_quantity', 'allows_decimal_quantity', 'is_quote_only',
         ]
 
     def _build_url(self, file_field):

@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import User, OTPRequest
+from .models import User, OTPRequest, EmailOTPRequest
 
 
 @admin.register(User)
@@ -18,3 +18,11 @@ class OTPRequestAdmin(admin.ModelAdmin):
     list_filter = ('is_verified',)
     search_fields = ('phone_number',)
     readonly_fields = ('phone_number', 'code', 'created_at', 'expires_at', 'is_verified', 'attempts')
+
+
+@admin.register(EmailOTPRequest)
+class EmailOTPRequestAdmin(admin.ModelAdmin):
+    list_display = ('email', 'user', 'code', 'is_verified', 'attempts', 'created_at', 'expires_at')
+    list_filter = ('is_verified',)
+    search_fields = ('email', 'user__username')
+    readonly_fields = ('user', 'email', 'code', 'created_at', 'expires_at', 'is_verified', 'attempts')

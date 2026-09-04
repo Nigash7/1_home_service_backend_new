@@ -1,0 +1,139 @@
+{% extends "dashboard/_layout.html" %}
+
+{% block title %}Tender Settings{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    <div class="flex items-center gap-3 mb-6">
+        <a href="{% url 'tenders_list' %}" class="text-gray-500 hover:text-gray-700">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+        </a>
+        <h1 class="text-2xl font-bold text-gray-900">Tender Settings</h1>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="mb-4 px-4 py-3 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-700{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="mb-4 px-4 py-3 rounded-lg bg-blue-50 text-blue-800 text-sm">
+        When a customer picks a bid, their choice is <strong>held</strong> and they are asked
+        for this percentage of that bid. Nothing is awarded, and the vendor is not told, until
+        it is paid. Change the rate whenever you like — a fee already raised keeps the rate it
+        was raised at.
+    </div>
+
+    <!-- What it has brought in -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+            <div class="text-xs text-gray-500 uppercase tracking-wide">Collected</div>
+            <div class="text-2xl font-bold text-gray-900 mt-1">
+                ₹{{ collected.total|default:0|floatformat:2 }}
+            </div>
+            <div class="text-xs text-gray-500 mt-1">
+                from {{ collected.count|default:0 }} confirmed tender{{ collected.count|default:0|pluralize }}
+            </div>
+        </div>
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+            <div class="text-xs text-gray-500 uppercase tracking-wide">Awaiting payment</div>
+            <div class="text-2xl font-bold text-amber-600 mt-1">
+                ₹{{ awaiting.total|default:0|floatformat:2 }}
+            </div>
+            <div class="text-xs text-gray-500 mt-1">
+                across {{ awaiting.count|default:0 }} held selection{{ awaiting.count|default:0|pluralize }}
+            </div>
+        </div>
+    </div>
+
+    <form method="post" class="space-y-5">
+        {% csrf_token %}
+
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-5">
+            <h2 class="font-bold text-gray-900">Confirmation fee</h2>
+
+            <label class="flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" name="is_confirmation_fee_active"
+                       {% if tender_settings.is_confirmation_fee_active %}checked{% endif %}
+                       class="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                <div>
+                    <div class="text-sm font-semibold text-gray-700">Charge a confirmation fee</div>
+                    <div class="text-xs text-gray-500">
+                        Unchecking awards a tender the moment the customer picks a bid, with nothing to pay.
+                        Fees already raised are left alone.
+                    </div>
+                </div>
+            </label>
+
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Fee (% of the chosen bid)</label>
+                <div class="relative max-w-[12rem]">
+                    <input type="number" name="confirmation_fee_percent" min="0" max="100" step="0.01"
+                           value="{{ tender_settings.confirmation_fee_percent|floatformat:'-2' }}"
+                           class="w-full px-4 py-2.5 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                    <span class="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400">%</span>
+                </div>
+                <p class="text-xs text-gray-500 mt-1">
+                    At {{ tender_settings.confirmation_fee_percent|floatformat:"-2" }}%, a ₹5,00,000 bid is confirmed for
+                    ₹{% widthratio tender_settings.confirmation_fee_percent 100 500000 %}.
+                </p>
+            </div>
+        </div>
+
+        <button type="submit" class="bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2.5 px-6 rounded-lg">
+            Save settings
+        </button>
+    </form>
+
+    <!-- The last twenty, so the rate can be judged against what it actually did -->
+    {% if recent_fees %}
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mt-6">
+        <h2 class="font-bold text-gray-900 mb-4">Recent fees</h2>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="text-xs text-gray-500 border-b border-gray-100">
+                    <tr>
+                        <th class="text-left py-2 font-medium">Raised</th>
+                        <th class="text-left py-2 font-medium">Tender</th>
+                        <th class="text-left py-2 font-medium">Customer</th>
+                        <th class="text-right py-2 font-medium">Bid</th>
+                        <th class="text-right py-2 font-medium">Rate</th>
+                        <th class="text-right py-2 font-medium">Fee</th>
+                        <th class="text-left py-2 font-medium pl-4">Status</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50">
+                    {% for fee in recent_fees %}
+                    <tr>
+                        <td class="py-2 text-gray-500 whitespace-nowrap">{{ fee.created_at|date:"M d, H:i" }}</td>
+                        <td class="py-2">
+                            <a href="{% url 'tender_detail' fee.tender_id %}" class="text-primary-600 hover:text-primary-700 font-medium">
+                                {{ fee.tender.code }}
+                            </a>
+                        </td>
+                        <td class="py-2 text-gray-700">{{ fee.tender.customer }}</td>
+                        <td class="py-2 text-right text-gray-700">₹{{ fee.bid_amount|floatformat:0 }}</td>
+                        <td class="py-2 text-right text-gray-500">{{ fee.percent|floatformat:"-2" }}%</td>
+                        <td class="py-2 text-right font-semibold text-gray-900">₹{{ fee.amount|floatformat:2 }}</td>
+                        <td class="py-2 pl-4">
+                            <span class="text-xs font-semibold px-2 py-1 rounded-full
+                                {% if fee.status == 'PAID' %}bg-green-100 text-green-700
+                                {% elif fee.status == 'PENDING' %}bg-amber-100 text-amber-700
+                                {% elif fee.status == 'WAIVED' %}bg-blue-100 text-blue-700
+                                {% else %}bg-gray-100 text-gray-600{% endif %}">
+                                {{ fee.get_status_display }}
+                            </span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

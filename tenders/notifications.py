@@ -82,6 +82,53 @@ def notify_customer_new_bid(tender, bid):
     )
 
 
+def _percent(value):
+    """A rate the way the apps show it: 10, not 10.00."""
+    try:
+        return f"{float(value):g}"
+    except (TypeError, ValueError):
+        return ""
+
+
+def notify_customer_confirmation_due(tender, bid, fee):
+    """
+    They have picked a vendor and now owe the platform to lock it in. The
+    figure and the vendor's name are the whole message -- without both, the
+    customer cannot tell what they are being asked to pay for.
+    """
+    from notifications.services import notify
+
+    return notify(
+        'tender.confirmation_due', customer=tender.customer,
+        context=_context(
+            tender,
+            vendor_name=bid.vendor.display_name,
+            amount=_money(bid.amount),
+            fee_amount=_money(fee.amount),
+            percent=_percent(fee.percent),
+        ),
+        data=_data(tender, bid_id=bid.id, fee_id=fee.id),
+    )
+
+
+def notify_customer_confirmation_paid(tender, bid, fee):
+    """Their receipt. Sent alongside the award message, which carries the
+    vendor's number -- this one is only about the money."""
+    from notifications.services import notify
+
+    return notify(
+        'tender.confirmation_paid', customer=tender.customer,
+        context=_context(
+            tender,
+            vendor_name=bid.vendor.display_name,
+            amount=_money(bid.amount),
+            fee_amount=_money(fee.amount),
+            percent=_percent(fee.percent),
+        ),
+        data=_data(tender, bid_id=bid.id, fee_id=fee.id),
+    )
+
+
 def notify_customer_awarded(tender, bid):
     """Deal confirmed, from the customer's side."""
     from notifications.services import notify
@@ -225,6 +272,24 @@ def notify_admins_awarded(tender, bid):
         context=_context(tender, vendor_name=bid.vendor.display_name,
                          amount=_money(bid.amount)),
         data=_data(tender),
+    )
+
+
+def notify_admins_confirmation_paid(tender, bid, fee):
+    """Money in. The only tender event that is actually about takings, so it
+    names the fee, the rate and the bid it came off."""
+    from notifications.services import notify_admins
+
+    return notify_admins(
+        'admin.tender_confirmation_paid',
+        context=_context(
+            tender,
+            vendor_name=bid.vendor.display_name,
+            amount=_money(bid.amount),
+            fee_amount=_money(fee.amount),
+            percent=_percent(fee.percent),
+        ),
+        data=_data(tender, bid_id=bid.id, fee_id=fee.id),
     )
 
 

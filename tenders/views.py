@@ -1,4 +1,6 @@
-from django.db import transaction
+import logging
+
+from django.conf import settings as django_settings
 from django.db.models import Avg, F
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -8,24 +10,31 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.permissions import IsCustomer, IsCustomerOrVendor, IsVendor
+from payments import gateway
+from payments.serializers import VerifyPaymentSerializer
 
 from . import notifications as notify_tender
+from . import services as tender_services
 from .models import (
     Tender,
     TenderAttachment,
     TenderBid,
+    TenderConfirmationFee,
     TenderMilestone,
 )
 from .serializers import (
     TenderAttachmentSerializer,
     TenderBidSerializer,
     TenderBidWriteSerializer,
+    TenderConfirmationFeeSerializer,
     TenderDetailSerializer,
     TenderListSerializer,
     TenderProgressUpdateSerializer,
     TenderReviewSerializer,
     TenderWriteSerializer,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def tender_queryset():
@@ -208,6 +217,10 @@ class TenderCancelView(APIView):
         tender.cancellation_reason = (request.data.get('reason') or '').strip()
         tender.save(update_fields=['status', 'cancellation_reason', 'updated_at'])
 
+        # A fee still owed on a tender that no longer exists would sit in the
+        # customer's app asking to be paid for nothing.
+        tender_services.cancel_open_fees(tender, reason='Tender cancelled.')
+
         notify_tender.notify_vendors_tender_closed(
             tender, live_bids, reason=tender.cancellation_reason
         )
@@ -375,6 +388,13 @@ class TenderMyBidView(APIView):
         bid = self._my_bid(tender, request.user.vendor_profile)
         if bid is None:
             raise ValidationError("You have not bid on this tender.")
+        if bid.status == TenderBid.Status.SELECTED:
+            # Deliberately vague: the customer has picked them but has not
+            # paid to confirm it, and a selection that may yet be released is
+            # not something to tell a vendor about.
+            raise ValidationError(
+                "This tender is not accepting changes at the moment."
+            )
         if bid.status != TenderBid.Status.SUBMITTED:
             raise ValidationError("This bid has already been decided.")
 
@@ -421,55 +441,198 @@ class TenderBidsListView(generics.ListAPIView):
 class TenderBidAcceptView(APIView):
     """
     POST /api/tenders/bids/<id>/accept/
-    Customer app: "Select Best Vendor". Awards the tender, turns down every
-    other bid and tells all sides -- the deal-confirmed step of the flow.
+    Customer app: "Select Best Vendor".
+
+    This picks the bid; it does not award it. The customer owes the platform a
+    percentage of the bid to confirm it (see tenders.services.select_bid), and
+    until that is paid the choice is only held: nobody has won, nobody has
+    lost, and the vendor has not been told. The response says what is owed and
+    the app takes them to Checkout.
+
+    Where the fee comes to nothing -- the rate is zero, or an admin has
+    switched it off -- the award happens here as it always did, and `fee` in
+    the response is null.
     """
     permission_classes = [IsCustomer]
 
-    @transaction.atomic
     def post(self, request, pk):
         bid = get_object_or_404(
             TenderBid.objects.select_related('tender', 'vendor__user'),
             pk=pk, tender__customer=request.user.customer_profile,
         )
-        tender = bid.tender
 
-        if tender.status != Tender.Status.OPEN:
-            raise ValidationError(
-                f"This tender is {tender.get_status_display()} and cannot be awarded."
+        try:
+            fee = tender_services.select_bid(bid)
+        except ValueError as exc:
+            raise ValidationError(str(exc))
+
+        tender = get_object_or_404(tender_queryset(), pk=bid.tender_id)
+        payload = {
+            'tender': TenderDetailSerializer(tender, context={'request': request}).data,
+            'fee': TenderConfirmationFeeSerializer(fee).data if fee else None,
+        }
+        if fee is None:
+            payload['detail'] = (
+                f'{bid.vendor.display_name} has been awarded this project.'
             )
-        if bid.status != TenderBid.Status.SUBMITTED:
-            raise ValidationError("That bid is no longer available to accept.")
+        else:
+            payload['detail'] = (
+                f'{bid.vendor.display_name} is held for you. Pay the '
+                f'{fee.amount} confirmation fee to lock them in.'
+            )
+        return Response(payload)
 
-        now = timezone.now()
-        losing_bids = list(
-            tender.bids.exclude(pk=bid.pk)
-            .filter(status=TenderBid.Status.SUBMITTED)
-            .select_related('vendor__user')
+
+class TenderConfirmationFeeView(APIView):
+    """
+    GET    /api/tenders/<id>/confirmation/          What is owed, and its state.
+    POST   /api/tenders/<id>/confirmation/          Open a Razorpay order for it.
+    DELETE /api/tenders/<id>/confirmation/          Release the held selection.
+
+    GET is what the app falls back on when a checkout could not be confirmed
+    -- a killed app or a dropped connection still ends up correct here,
+    because the webhook will have landed.
+    """
+    permission_classes = [IsCustomer]
+
+    def _tender(self, request, pk):
+        return get_object_or_404(
+            Tender, pk=pk, customer=request.user.customer_profile
         )
 
-        bid.status = TenderBid.Status.ACCEPTED
-        bid.decided_at = now
-        bid.save(update_fields=['status', 'decided_at', 'updated_at'])
+    def _latest_fee(self, tender):
+        """The live fee, or the last one settled -- so a GET straight after
+        paying answers 'paid' rather than 'nothing here'."""
+        return (
+            tender.pending_confirmation_fee
+            or tender.confirmation_fees.order_by('-created_at').first()
+        )
 
-        tender.bids.exclude(pk=bid.pk).filter(
-            status=TenderBid.Status.SUBMITTED
-        ).update(status=TenderBid.Status.REJECTED, decided_at=now)
+    def get(self, request, pk):
+        tender = self._tender(request, pk)
+        fee = self._latest_fee(tender)
+        return Response({
+            'tender_id': tender.pk,
+            'tender_status': tender.status,
+            'is_paid': bool(fee and fee.is_paid),
+            'fee': TenderConfirmationFeeSerializer(fee).data if fee else None,
+        })
 
-        tender.awarded_bid = bid
-        tender.status = Tender.Status.AWARDED
-        tender.awarded_at = now
-        tender.save(update_fields=['awarded_bid', 'status', 'awarded_at', 'updated_at'])
+    def post(self, request, pk):
+        tender = self._tender(request, pk)
+        fee = tender.pending_confirmation_fee
+        if fee is None:
+            raise ValidationError("There is nothing to pay on this tender.")
 
-        # After the row is safely committed, so a push failure can never undo
-        # the award the customer just made.
-        transaction.on_commit(lambda: notify_tender.notify_customer_awarded(tender, bid))
-        transaction.on_commit(lambda: notify_tender.notify_vendor_won(tender, bid))
-        transaction.on_commit(lambda: notify_tender.notify_vendors_lost(tender, losing_bids))
-        transaction.on_commit(lambda: notify_tender.notify_admins_awarded(tender, bid))
+        try:
+            fee = tender_services.open_order_for(fee)
+        except gateway.PaymentError as exc:
+            return Response({'detail': str(exc)},
+                            status=status.HTTP_502_BAD_GATEWAY)
 
         return Response({
-            'detail': f'{bid.vendor.display_name} has been awarded this project.',
+            'fee_id': fee.pk,
+            'order_id': fee.razorpay_order_id,
+            'amount': fee.amount_paise,          # paise, for Checkout
+            'amount_display': str(fee.amount),
+            'currency': fee.currency,
+            'key_id': django_settings.RAZORPAY_KEY_ID,  # publishable, safe to send
+            'tender_id': tender.pk,
+            'is_live': fee.is_live,
+        }, status=status.HTTP_201_CREATED)
+
+    def delete(self, request, pk):
+        tender = self._tender(request, pk)
+        try:
+            tender_services.release_selection(
+                tender, reason='Released by the customer.'
+            )
+        except ValueError as exc:
+            raise ValidationError(str(exc))
+        return Response({
+            'detail': 'Your choice has been released. The tender is open again.',
+            'status': tender.status,
+        })
+
+
+class TenderConfirmationVerifyView(APIView):
+    """
+    POST /api/tenders/confirmation/verify/
+
+    The app calls this with what Checkout returned. A valid signature is
+    necessary but not sufficient: we also ask Razorpay directly what state the
+    payment is in, because the signature only proves the ids are genuine, not
+    that the money was actually captured. The same reasoning -- and the same
+    order of checks -- as payments.VerifyPaymentView.
+    """
+    permission_classes = [IsCustomer]
+
+    def post(self, request, pk=None):
+        serializer = VerifyPaymentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        fee = TenderConfirmationFee.objects.select_related(
+            'tender', 'bid__vendor__user'
+        ).filter(
+            razorpay_order_id=data['razorpay_order_id'],
+            tender__customer=request.user.customer_profile,
+        ).first()
+        if fee is None:
+            return Response({'detail': 'Unknown order.'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        if not gateway.verify_checkout_signature(
+            order_id=data['razorpay_order_id'],
+            payment_id=data['razorpay_payment_id'],
+            signature=data['razorpay_signature'],
+        ):
+            tender_services.mark_fee_failed(
+                fee, reason='Signature verification failed.'
+            )
+            logger.warning("tenders: bad signature on fee order %s",
+                           data['razorpay_order_id'])
+            return Response({'detail': 'Payment could not be verified.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            remote = gateway.fetch_payment(data['razorpay_payment_id'])
+        except gateway.PaymentError as exc:
+            # The webhook is the backstop here, so don't fail the fee.
+            return Response({'detail': str(exc)},
+                            status=status.HTTP_502_BAD_GATEWAY)
+
+        if remote.get('order_id') != fee.razorpay_order_id:
+            return Response({'detail': 'Payment does not belong to this order.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        if int(remote.get('amount') or 0) < fee.amount_paise:
+            logger.error("tenders: short payment on fee order %s",
+                         fee.razorpay_order_id)
+            return Response({'detail': 'Paid amount does not match the fee.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        if remote.get('status') != 'captured':
+            tender_services.mark_fee_failed(
+                fee,
+                reason=remote.get('error_description') or f"Status: {remote.get('status')}",
+                payment_id=data['razorpay_payment_id'],
+            )
+            return Response({'detail': 'Payment was not completed.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        tender_services.mark_fee_paid(
+            fee,
+            payment_id=data['razorpay_payment_id'],
+            method=remote.get('method') or '',
+            signature=data['razorpay_signature'],
+        )
+
+        fee.refresh_from_db()
+        tender = get_object_or_404(tender_queryset(), pk=fee.tender_id)
+        return Response({
+            'detail': 'Payment successful. The vendor has been told the job is theirs.',
+            'fee': TenderConfirmationFeeSerializer(fee).data,
             'tender': TenderDetailSerializer(tender, context={'request': request}).data,
         })
 

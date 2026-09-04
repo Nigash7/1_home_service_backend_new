@@ -41,18 +41,7 @@
         <form method="post" enctype="multipart/form-data" class="space-y-5">
             {% csrf_token %}
 
-            <!-- Image upload -->
-            <div>
-                <label class="block text-sm font-semibold text-gray-700 mb-2">Service Image</label>
-                {% if is_edit and service.image %}
-                    <div class="mb-3">
-                        <img src="{{ service.image.url }}" alt="Current image" class="w-40 h-32 rounded-xl object-cover border border-gray-200">
-                        <p class="text-xs text-gray-500 mt-1">Current image. Upload a new one to replace.</p>
-                    </div>
-                {% endif %}
-                <input type="file" name="image" accept="image/*"
-                       class="w-full text-sm border border-gray-300 rounded-lg p-2 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary-100 file:text-primary-700 hover:file:bg-primary-200">
-            </div>
+            {% include "dashboard/_file_field.html" with name="image" label="Service Image" current=service.image %}
 
             <!-- Name -->
             <div>
@@ -71,15 +60,53 @@
                           class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">{% if is_edit %}{{ service.description }}{% endif %}</textarea>
             </div>
 
+            <!-- Pricing type: what the price is a rate of -->
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Pricing type *</label>
+                <select name="pricing_type" id="pricing-type"
+                        class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                    {% for value, label in pricing_types %}
+                    <option value="{{ value }}"
+                            {% if is_edit and service.pricing_type == value %}selected{% endif %}>
+                        {{ label }}
+                    </option>
+                    {% endfor %}
+                </select>
+                <p class="text-xs text-gray-500 mt-1" id="pricing-hint"></p>
+            </div>
+
+            <!-- Only a quote service reaches the tender form, so this is the
+                 only type it is asked for. -->
+            <div id="project-type-field" class="hidden">
+                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                    Project type for the quote
+                </label>
+                <select name="tender_project_type"
+                        class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                    <option value="">Let the customer pick</option>
+                    {% for value, label in project_types %}
+                    <option value="{{ value }}"
+                            {% if is_edit and service.tender_project_type == value %}selected{% endif %}>
+                        {{ label }}
+                    </option>
+                    {% endfor %}
+                </select>
+                <p class="text-xs text-gray-500 mt-1">
+                    The tender form opens with this already chosen. The type of work
+                    comes from this service's own category, so it is not asked for here.
+                </p>
+            </div>
+
             <!-- Price + Duration -->
             <div class="grid grid-cols-2 gap-4">
                 <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-2">Price (₹) *</label>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2"
+                           id="price-label">Price (₹) *</label>
                     <input type="number" name="price" step="0.01" min="0" required
                            value="{% if is_edit %}{{ service.price }}{% else %}0{% endif %}"
                            class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
                 </div>
-                <div>
+                <div id="duration-field">
                     <label class="block text-sm font-semibold text-gray-700 mb-2">Duration (mins)</label>
                     <input type="number" name="duration_minutes" min="1"
                            value="{% if is_edit %}{{ service.duration_minutes }}{% else %}60{% endif %}"
@@ -114,4 +141,67 @@
         </form>
     </div>
 </div>
+
+<script>
+    // Says what the number in the price box will mean, so an admin setting
+    // "Per Sq. Ft." can see they are typing a rate and not a total.
+    (function () {
+        var UNITS = {
+            FIXED: '', STARTING_FROM: '', CUSTOM_QUOTE: '',
+            PER_HOUR: 'hour', PER_DAY: 'day', PER_SQ_FT: 'sq ft',
+            PER_SQ_M: 'm²', PER_VISIT: 'visit', PER_ITEM: 'item',
+            PER_UNIT: 'unit', PER_KM: 'km', PER_ROOM: 'room',
+            PER_SEAT: 'seat', PER_KG: 'kg'
+        };
+
+        var select = document.getElementById('pricing-type');
+        var label = document.getElementById('price-label');
+        var hint = document.getElementById('pricing-hint');
+        if (!select || !label || !hint) return;
+
+        // "How long it takes" is only a fact about the flat types. On a
+        // per-hour service the customer chooses the hours, and on per-sq-ft it
+        // depends on the area, so the field is put away for those.
+        var DURATION_TYPES = ['FIXED', 'STARTING_FROM'];
+
+        function sync() {
+            var type = select.value;
+            var unit = UNITS[type] || '';
+
+            var duration = document.getElementById('duration-field');
+            if (duration) {
+                duration.classList.toggle(
+                    'hidden', DURATION_TYPES.indexOf(type) === -1
+                );
+            }
+
+            var project = document.getElementById('project-type-field');
+            if (project) {
+                project.classList.toggle('hidden', type !== 'CUSTOM_QUOTE');
+            }
+
+            if (type === 'CUSTOM_QUOTE') {
+                label.textContent = 'Price (₹)';
+                hint.textContent = 'No price is shown to customers. They see '
+                    + '"Price on request" and are sent to post a requirement '
+                    + 'for vendors to quote on.';
+            } else if (type === 'STARTING_FROM') {
+                label.textContent = 'Starting price (₹) *';
+                hint.textContent = 'Shown as "From ₹499". The final amount can '
+                    + 'differ.';
+            } else if (unit) {
+                label.textContent = 'Price per ' + unit + ' (₹) *';
+                hint.textContent = 'The rate for one ' + unit
+                    + '. The customer enters how many, and the total is the '
+                    + 'two multiplied.';
+            } else {
+                label.textContent = 'Price (₹) *';
+                hint.textContent = 'One flat price.';
+            }
+        }
+
+        select.addEventListener('change', sync);
+        sync();
+    })();
+</script>
 {% endblock %}

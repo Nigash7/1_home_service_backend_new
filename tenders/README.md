@@ -10,15 +10,22 @@ the vendors come to the customer.
 ```
                                         ┌─ REJECTED ──┐ (customer fixes it,
                                         │             │  publishes again)
-DRAFT ──publish──> PENDING_APPROVAL ──approve──> OPEN ──award──> AWARDED
-                                                   │                 │
-                                                   │              start
-                                              CANCELLED              ↓
-                                                             IN_PROGRESS
-                                                                     │
-                                                     progress · milestones
-                                                                     ↓
-                                                             COMPLETED ──> review
+DRAFT ──publish──> PENDING_APPROVAL ──approve──> OPEN ──pick a bid──┐
+                                                   ↑                │
+                                              CANCELLED             ↓
+                                                   └──release── PENDING_CONFIRMATION
+                                                                    │
+                                                            pay the fee
+                                                                    ↓
+                                                                AWARDED
+                                                                    │
+                                                                 start
+                                                                    ↓
+                                                            IN_PROGRESS
+                                                                    │
+                                                    progress · milestones
+                                                                    ↓
+                                                            COMPLETED ──> review
 ```
 
 ## Status meanings
@@ -29,10 +36,46 @@ DRAFT ──publish──> PENDING_APPROVAL ──approve──> OPEN ──awar
 | `PENDING_APPROVAL` | Admin | Waiting in the dashboard queue. Still invisible to vendors. |
 | `REJECTED` | Customer | Sent back with a reason. Editable again, can be re-published. |
 | `OPEN` | Vendors | Matching vendors notified; bids accepted until `bid_deadline`. |
-| `AWARDED` | Vendor | A bid was accepted; losing bids auto-rejected. |
+| `PENDING_CONFIRMATION` | Customer | A bid is **held**: chosen, but not paid for. Nobody has won or lost, and the vendor has not been told. |
+| `AWARDED` | Vendor | The fee was paid (or waived by an admin); losing bids auto-rejected. |
 | `IN_PROGRESS` | Vendor | Progress updates and milestones run here. |
 | `COMPLETED` | Customer | Review can be left. |
-| `CANCELLED` | — | Customer pulled it; live bidders were told. |
+| `CANCELLED` | — | Customer pulled it; live bidders were told; any unpaid fee closed. |
+
+## The confirmation fee
+
+Picking a bid does not award it. The customer owes the platform a percentage
+of the bid they chose — the rate is `TenderSettings.confirmation_fee_percent`,
+set by an admin at **Dashboard → Tenders → Fee settings**, and it defaults to
+10%. Only once that is paid does the vendor learn they won.
+
+```
+accept  ──> TenderConfirmationFee (PENDING)   tender PENDING_CONFIRMATION
+                                              winning bid  SELECTED
+                                              other bids   SUBMITTED, untouched
+pay     ──> fee PAID                          tender AWARDED, losers REJECTED
+release ──> fee CANCELLED                     tender OPEN, bid back to SUBMITTED
+```
+
+- **The rate is snapshotted** onto the fee when the bid is picked. An admin
+  changing it afterwards does not re-price a fee a customer is looking at.
+- **One live fee per tender**, enforced by a partial unique constraint, so a
+  customer cannot hold two vendors and pay for whichever they prefer.
+- **The vendor never sees `SELECTED`.** `TenderBidSerializer` shows it to them
+  as `SUBMITTED`, and their phone number stays hidden from the customer, until
+  the fee lands — a held selection may still be released.
+- **Money is real here**, unlike milestones. The fee is charged through the
+  same Razorpay account bookings use (`payments.gateway`), signature-verified,
+  and settled by webhook when the app cannot confirm it. It is a separate
+  model from `payments.Payment` because none of the escrow half applies: a
+  platform fee is never released to a vendor and never paid out.
+- **Set the rate to 0, or switch the fee off**, and accepting awards the
+  tender on the spot, exactly as it did before the fee existed.
+- **An admin can award anyway** from the dashboard — the phone-call path. Any
+  held fee is marked `WAIVED` with a note saying who did it, rather than left
+  looking unchased.
+- **Where the fee ends up** is Razorpay's settlement account, not anything
+  this app chooses or records -- see `payments/README.md`.
 
 ## Endpoints
 
@@ -51,7 +94,11 @@ All under `/api/tenders/`. JWT as everywhere else.
 | POST | `/<id>/attachments/` | Upload a drawing (multipart: `file`, `caption`) |
 | DELETE | `/attachments/<id>/` | Remove one |
 | GET | `/<id>/bids/` | Compare bids (`?sort=amount\|timeline\|rating`) |
-| POST | `/bids/<id>/accept/` | Select the vendor — awards the tender |
+| POST | `/bids/<id>/accept/` | Pick the vendor — holds the bid, returns the `fee` owed |
+| GET | `/<id>/confirmation/` | What is owed and whether it is paid (reconciliation path) |
+| POST | `/<id>/confirmation/` | Open a Razorpay order for the fee |
+| DELETE | `/<id>/confirmation/` | Release the held choice; the tender reopens |
+| POST | `/confirmation/verify/` | Hand back Checkout's three values; awards on success |
 | POST | `/<id>/cancel/` | Pull the tender (`reason` optional) |
 | POST | `/milestones/<id>/pay/` | Record a milestone as settled |
 | POST | `/<id>/review/` | Rate the vendor (`rating` 1–5, `comment`) |
@@ -100,13 +147,16 @@ PATCH keeps the existing plan; sending `[]` clears it.
   revise rather than re-submit, so the customer never compares two quotes from
   the same outfit.
 - **Phone numbers are withheld until a deal exists.** The customer sees a
-  vendor's number only after accepting their bid; a vendor sees the customer's
-  number only after winning. An open tender is not a lead list.
+  vendor's number only after the tender is actually awarded — picking a bid is
+  not enough, or a customer could choose a vendor, take the number and release
+  the selection without paying. A vendor sees the customer's number only after
+  winning. An open tender is not a lead list.
 - **Milestones hang off the bid, not the tender.** `tender.milestones` reads
   the winning bid's, so there is no copying and nothing to drift. Losing bids
   keep theirs; they simply stop mattering.
-- **No money moves.** `pay` records what the customer says they settled, the
-  same way `Booking.payment_status` does. Wiring a gateway is a separate job.
+- **No money moves on milestones.** `pay` records what the customer says they
+  settled with the vendor, the same way `Booking.payment_status` does. The
+  confirmation fee above is the one exception — that one is really charged.
 - **Reviews go in `reviews.Review`**, pointed at the tender instead of a
   booking, so a tender counts towards the vendor's rating everywhere it is
   already shown — pro vendor cards, profile page, dashboard.
@@ -131,8 +181,10 @@ is there to catch it if they ever stop.
 python manage.py test tenders
 ```
 
-50 tests covering the flow end to end plus the access rules. They sandbox
-`MEDIA_ROOT`, so uploads never land in the project's real media folder.
+Tests covering the flow end to end, the confirmation fee (hold, pay, release,
+webhook, forged signature, admin waive) and the access rules. They sandbox
+`MEDIA_ROOT`, so uploads never land in the project's real media folder, and
+they stub `payments.gateway`, so nothing reaches Razorpay.
 
 ## The apps
 
@@ -145,8 +197,9 @@ Profile → My tenders.
 |---|---|
 | `my_tenders_screen.dart` | Active / Closed tabs, cards flagging bids waiting |
 | `create_tender_screen.dart` | The whole brief, budget, timeline, site and drawings; saves a draft or publishes |
-| `tender_detail_screen.dart` | Status, brief, attachments, vendor, milestones, progress, review |
-| `tender_bids_screen.dart` | Compare bids by price / rating / timeline, then award |
+| `tender_detail_screen.dart` | Status, brief, attachments, vendor, milestones, progress, review — plus the Pay / Release buttons while a choice is held |
+| `tender_bids_screen.dart` | Compare bids by price / rating / timeline, then choose and pay the confirmation fee |
+| `services/payment_service.dart` | One Razorpay checkout, for a booking or for a confirmation fee |
 | `utils/tender_format.dart` | Rupee, date and status formatting shared by all four |
 
 **vendor_app** — reached from Dashboard → Quick actions → Tenders.

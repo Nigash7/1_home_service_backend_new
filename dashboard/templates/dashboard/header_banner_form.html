@@ -28,18 +28,7 @@
             {% csrf_token %}
 
             <!-- Image -->
-            <div>
-                <label class="block text-sm font-semibold text-gray-700 mb-2">Slide Image *</label>
-                {% if is_edit and banner.image %}
-                    <div class="mb-3">
-                        <img src="{{ banner.image.url }}" alt="Current" class="w-full rounded-xl object-cover border border-gray-200" style="aspect-ratio: 2 / 1;">
-                        <p class="text-xs text-gray-500 mt-1">Current image. Upload a new one to replace.</p>
-                    </div>
-                {% endif %}
-                <input type="file" name="image" accept="image/*" {% if not is_edit %}required{% endif %}
-                       class="w-full text-sm border border-gray-300 rounded-lg p-2 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary-100 file:text-primary-700 hover:file:bg-primary-200">
-                <p class="text-xs text-gray-500 mt-1">Recommended: 1000&times;500 (2:1). Keep important artwork on the right half if you add a title.</p>
-            </div>
+            {% include "dashboard/_file_field.html" with name="image" label="Slide Image *" current=banner.image removable=False required=True help="Recommended: 1000x500 (2:1). Keep important artwork on the right half if you add a title." %}
 
             <!-- Title -->
             <div>

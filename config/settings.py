@@ -12,17 +12,42 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = config('SECRET_KEY', default='django-insecure-2dq$#73&w@z=#3x_lgo8or^%&d&vyh+z1!ladgd)2n3%l_jn!^')
+# Read first, because it decides how strict everything below is allowed to
+# be. Defaulting to False means a server that never received a .env fails
+# closed: with debug on, any error page prints the database password, the
+# API keys and the full source paths to whoever triggered it.
+DEBUG = config('DEBUG', default=False, cast=bool)
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = config('DEBUG', default=True, cast=bool)
+# No usable default on purpose. A key committed to source is a key anyone who
+# can read the repository can use to forge a signed-in session. Local
+# development gets a throwaway; production supplies a real one or refuses to
+# start, which is far better than starting insecurely and looking fine.
+SECRET_KEY = config('SECRET_KEY', default='')
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = 'django-insecure-local-development-only-never-deploy'
+    else:
+        raise ImproperlyConfigured(
+            'SECRET_KEY is not set. Generate one by running: python -c '
+            '"from django.core.management.utils import get_random_secret_key; '
+            'print(get_random_secret_key())" -- then add it to the .env file '
+            'on this server.'
+        )
 
-# ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,192.168.1.11').split(',')
-ALLOWED_HOSTS = config(
-    "ALLOWED_HOSTS",
-    default="localhost,127.0.0.1,.onrender.com"
-).split(",")
+# Comma-separated bare hostnames -- no brackets, no quotes. This is split as
+# plain text, so ALLOWED_HOSTS=["*"] does not mean "any host", it creates one
+# host literally named '["*"]' and every real request is then rejected.
+ALLOWED_HOSTS = [
+    h.strip() for h in config('ALLOWED_HOSTS', default='').split(',') if h.strip()
+]
+if not ALLOWED_HOSTS:
+    if DEBUG:
+        ALLOWED_HOSTS = ['localhost', '127.0.0.1', '[::1]']
+    else:
+        raise ImproperlyConfigured(
+            "ALLOWED_HOSTS is not set. Add this server's domain to its .env, "
+            "e.g. ALLOWED_HOSTS=api.example.com,example.com"
+        )
 
 # Application definition
 
@@ -78,9 +103,34 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-# --- CORS: allow Flutter app (running on emulator/device) to call the API ---
-# During development, allow all. Lock this down to specific origins before production.
-CORS_ALLOW_ALL_ORIGINS = True
+# --- CORS: which websites may call this API from a browser ---
+# Only the web build is affected. The Android and iOS apps are not browsers,
+# send no Origin header, and are not subject to CORS at all -- so tightening
+# this cannot break them. Left open, any site on the internet could make
+# authenticated calls using a logged-in visitor's browser.
+CORS_ALLOWED_ORIGINS = [
+    o.strip().rstrip('/')
+    for o in config('CORS_ALLOWED_ORIGINS', default='').split(',')
+    if o.strip()
+]
+CORS_ALLOW_ALL_ORIGINS = config('CORS_ALLOW_ALL_ORIGINS', default=DEBUG, cast=bool)
+
+if not DEBUG and not CORS_ALLOW_ALL_ORIGINS and not CORS_ALLOWED_ORIGINS:
+    raise ImproperlyConfigured(
+        'CORS_ALLOWED_ORIGINS is empty, so the customer web view would be '
+        'blocked from calling this API. Set it in .env, e.g. '
+        'CORS_ALLOWED_ORIGINS=https://example.com,https://www.example.com'
+    )
+
+# Separate from CORS and just as necessary. The dashboard posts forms over
+# https from behind nginx; Django checks the Origin header of every POST
+# against this list, so without the domain here each admin save fails with a
+# CSRF error. Entries must include the scheme.
+CSRF_TRUSTED_ORIGINS = [
+    o.strip().rstrip('/')
+    for o in config('CSRF_TRUSTED_ORIGINS', default='').split(',')
+    if o.strip()
+]
 
 # --- Custom user model (defined in accounts app) ---
 AUTH_USER_MODEL = 'accounts.User'
@@ -128,6 +178,27 @@ CSRF_COOKIE_SECURE = not DEBUG
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'Lax'
 
+# ---------- HTTPS ----------
+# nginx terminates TLS and forwards to gunicorn over plain http, so without
+# this Django believes every request arrived insecurely: it refuses to set the
+# secure cookies above (nobody can sign in to the dashboard) and, with the
+# redirect below on, bounces the browser to https forever. nginx must actually
+# send the header -- proxy_set_header X-Forwarded-Proto $scheme.
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=not DEBUG, cast=bool)
+
+# HSTS tells a browser to refuse plain http for this domain for this many
+# seconds, and it cannot be withdrawn early: a browser that once saw a
+# one-year header honours it for a year even after the header stops. So it
+# starts at 0 and is raised deliberately once https is proven on the real
+# domain -- 300, then 86400, then 31536000.
+SECURE_HSTS_SECONDS = config('SECURE_HSTS_SECONDS', default=0, cast=int)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = config(
+    'SECURE_HSTS_INCLUDE_SUBDOMAINS', default=False, cast=bool
+)
+SECURE_HSTS_PRELOAD = config('SECURE_HSTS_PRELOAD', default=False, cast=bool)
+
 SMS_BACKEND = config('SMS_BACKEND', default='console')
 OTP_EXPIRY_MINUTES = config('OTP_EXPIRY_MINUTES', default=5, cast=int)
 OTP_RESEND_COOLDOWN_SECONDS = config('OTP_RESEND_COOLDOWN_SECONDS', default=60, cast=int)
@@ -171,7 +242,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': config('DB_NAME', default='homeservice_db'),
         'USER': config('DB_USER', default='postgres'),
-        'PASSWORD': config('DB_PASSWORD', default='2742123'),
+        'PASSWORD': config('DB_PASSWORD', default=''),
         'HOST': config('DB_HOST', default='localhost'),
         'PORT': config('DB_PORT', default='5432'),
     }
@@ -224,7 +295,12 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+# USE_TZ is on, so every datetime is stored in the database in UTC whatever
+# this says -- changing it converts how times are read and displayed, not what
+# is stored, and needs no migration. It does change what "today" means in
+# every dashboard filter and report, which is why it belongs before real
+# bookings exist rather than after.
+TIME_ZONE = config('TIME_ZONE', default='Asia/Kolkata')
 
 USE_I18N = True
 
@@ -304,59 +380,62 @@ STORAGES = {
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
-# Email — for OTP delivery
-# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-# EMAIL_HOST = 'smtp.gmail.com'
-# EMAIL_PORT = 587
-# EMAIL_USE_TLS = True
-# EMAIL_HOST_USER = 'otptbio@gmail.com'  # Replace with your Gmail
-# EMAIL_HOST_PASSWORD = 'nkjc byoy lidm ycyg'  # Gmail App Password (not regular password)
-# DEFAULT_FROM_EMAIL = 'Home Service Admin <otptbio@gmail.com>'
-# ---------- Email / Admin OTP ----------
-
-# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-# EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-
-# EMAIL_HOST = config('EMAIL_HOST', default='smtp.gmail.com')
-# EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
-# EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
-
-# EMAIL_HOST_USER = config('EMAIL_HOST_USER')
-# EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
-
-# DEFAULT_FROM_EMAIL = config(
-#     'DEFAULT_FROM_EMAIL',
-#     default=EMAIL_HOST_USER
-# )
-# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+# ---------- Email / OTP delivery ----------
+# The backend used to be hard-coded to 'console', which only prints the OTP
+# to the server's terminal. Nobody reads a terminal on a VPS, so every login
+# silently became impossible the moment this was deployed. It now follows
+# DEBUG: printed while developing, actually sent in production.
+EMAIL_BACKEND = config(
+    'EMAIL_BACKEND',
+    default=(
+        'django.core.mail.backends.console.EmailBackend'
+        if DEBUG
+        else 'django.core.mail.backends.smtp.EmailBackend'
+    ),
+)
 
 EMAIL_HOST = config('EMAIL_HOST', default='smtp.gmail.com')
 EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
 EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
 
-
-EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
-EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
+# python-decouple does not strip trailing '# comments' from a .env value, so
+# `EMAIL_HOST_USER = me@gmail.com  # my address` is read complete with the
+# comment and every send fails on an unparseable sender. Trimmed here so a
+# stray comment costs nothing.
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='').split('#')[0].strip()
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='').split('#')[0].strip()
 
 EMAIL_TIMEOUT = 10
 
-DEFAULT_FROM_EMAIL = config(
-    'DEFAULT_FROM_EMAIL',
-    default=EMAIL_HOST_USER
-)
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default=EMAIL_HOST_USER)
 
-
-
-
-# For development testing without SMTP setup:
-# EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+# Failing at startup beats discovering it when the first customer cannot log
+# in: SMTP selected with no credentials cannot deliver a single OTP.
+if EMAIL_BACKEND.endswith('smtp.EmailBackend') and not (
+    EMAIL_HOST_USER and EMAIL_HOST_PASSWORD
+):
+    raise ImproperlyConfigured(
+        'EMAIL_BACKEND is set to SMTP but EMAIL_HOST_USER / '
+        'EMAIL_HOST_PASSWORD are missing from .env, so no OTP email could be '
+        'sent and nobody would be able to sign in.'
+    )
 
 
 # ---------- Firebase Cloud Messaging ----------
-FCM_ENABLED = True
-FCM_PROJECT_ID = 'prohome-8f3c8'
-FCM_CREDENTIALS_FILE = BASE_DIR / 'secrets' / 'fcm-service-account.json'
+# The project id belongs in configuration, not in source: moving to the
+# company Firebase account should be a .env change on the server, not a code
+# change that has to be committed, reviewed and redeployed.
+FCM_ENABLED = config('FCM_ENABLED', default=True, cast=bool)
+FCM_PROJECT_ID = config('FCM_PROJECT_ID', default='')
+
+# A private key. It is deliberately absent from Git (see .gitignore) and has
+# to be copied onto each server by hand. notifications/push.py checks the file
+# exists before every send and records a readable reason if it does not, so a
+# missing file degrades to "no push" rather than crashing a request.
+FCM_CREDENTIALS_FILE = config(
+    'FCM_CREDENTIALS_FILE',
+    default=str(BASE_DIR / 'secrets' / 'fcm-service-account.json'),
+)
 
 
 

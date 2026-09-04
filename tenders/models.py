@@ -1,7 +1,71 @@
+from decimal import Decimal, ROUND_HALF_UP
+
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
 
 from config.storages import raw_storage
+from payments.models import to_paise
+
+from .project_types import ProjectType
+
+
+class TenderSettings(models.Model):
+    """
+    Single settings row holding the platform's own terms on tenders. Edited
+    from the dashboard, the same way the referral programme is.
+
+    Only one thing lives here today: what the platform charges a customer to
+    confirm the bid they picked. It is a percentage rather than a flat fee
+    because a ₹40,000 bathroom and a ₹40,00,000 house are not worth the same
+    to broker.
+    """
+
+    confirmation_fee_percent = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal('10.00'),
+        validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))],
+        help_text="Percent of the accepted bid the customer pays the platform "
+                  "to confirm it. 0 confirms every bid for free.",
+    )
+    is_confirmation_fee_active = models.BooleanField(
+        default=True,
+        help_text="Off = choosing a bid awards the tender straight away, with "
+                  "nothing to pay. Existing unpaid fees are left alone.",
+    )
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Tender Settings"
+        verbose_name_plural = "Tender Settings"
+
+    def __str__(self):
+        return f"Tender Settings ({self.confirmation_fee_percent}% confirmation fee)"
+
+    @classmethod
+    def get_solo(cls):
+        """The one and only settings row, created with defaults on first use."""
+        settings_row, _ = cls.objects.get_or_create(pk=1)
+        return settings_row
+
+    @property
+    def effective_percent(self):
+        """What to charge right now -- zero while the fee is switched off."""
+        if not self.is_confirmation_fee_active:
+            return Decimal('0.00')
+        return Decimal(self.confirmation_fee_percent)
+
+    def fee_on(self, amount):
+        """
+        The confirmation fee due on a bid of `amount`, in rupees.
+
+        Rounded half-up to the paisa here rather than at display time, so the
+        figure the customer is shown is exactly the figure Razorpay is asked
+        for -- a fee that renders as ₹4,000.01 and charges ₹4,000.00 is a
+        support ticket.
+        """
+        gross = Decimal(str(amount or 0)) * self.effective_percent / Decimal('100')
+        return gross.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
 
 class TenderQuerySet(models.QuerySet):
@@ -69,7 +133,12 @@ class TenderQuerySet(models.QuerySet):
 
     def with_bid_stats(self):
         """Annotates the figures every tender card and row shows."""
-        live = models.Q(bids__status=TenderBid.Status.SUBMITTED)
+        # A selected-but-unconfirmed bid is still one of the quotes on the
+        # table: dropping it here would make the count fall by one the moment
+        # the customer picked someone.
+        live = models.Q(bids__status__in=[
+            TenderBid.Status.SUBMITTED, TenderBid.Status.SELECTED,
+        ])
         return self.annotate(
             bid_total=models.Count('bids', filter=live, distinct=True),
             bid_low=models.Min('bids__amount', filter=live),
@@ -88,25 +157,31 @@ class Tender(models.Model):
     like.
 
     Flow:
-        DRAFT -> PENDING_APPROVAL -> OPEN -> AWARDED -> IN_PROGRESS -> COMPLETED
+        DRAFT -> PENDING_APPROVAL -> OPEN -> PENDING_CONFIRMATION -> AWARDED
+        -> IN_PROGRESS -> COMPLETED
     with REJECTED (an admin said no) and CANCELLED (the customer pulled it) as
     the ways out.
+
+    Picking a bid does not award it. The customer owes the platform a
+    percentage of the bid they chose -- see TenderConfirmationFee -- and only
+    once that is paid is the vendor told they won and the other bids turned
+    down. Until then the tender sits in PENDING_CONFIRMATION and the choice
+    can still be released.
     """
 
-    class ProjectType(models.TextChoices):
-        HOUSE = 'HOUSE', 'Independent House'
-        APARTMENT = 'APARTMENT', 'Apartment / Flat'
-        VILLA = 'VILLA', 'Villa'
-        COMMERCIAL = 'COMMERCIAL', 'Commercial Space'
-        RENOVATION = 'RENOVATION', 'Renovation / Remodel'
-        INTERIOR = 'INTERIOR', 'Interior Work'
-        OTHER = 'OTHER', 'Other'
+    # Lives in project_types.py so `services` can offer the same list without
+    # importing this module. Still reachable as Tender.ProjectType.
+    ProjectType = ProjectType
 
     class Status(models.TextChoices):
         DRAFT = 'DRAFT', 'Draft'
         PENDING_APPROVAL = 'PENDING_APPROVAL', 'Pending Approval'
         REJECTED = 'REJECTED', 'Rejected'
         OPEN = 'OPEN', 'Open for Bids'
+        # The customer has picked a bid but has not yet paid the confirmation
+        # fee. The choice is held -- nobody has won and nobody has lost -- so
+        # the tender can still go back to OPEN if they change their mind.
+        PENDING_CONFIRMATION = 'PENDING_CONFIRMATION', 'Awaiting Confirmation'
         AWARDED = 'AWARDED', 'Awarded'
         IN_PROGRESS = 'IN_PROGRESS', 'Work In Progress'
         COMPLETED = 'COMPLETED', 'Completed'
@@ -256,6 +331,27 @@ class Tender(models.Model):
         return self.bids.exclude(status=TenderBid.Status.WITHDRAWN)
 
     @property
+    def selected_bid(self):
+        """
+        The bid the customer has picked but not yet paid to confirm.
+
+        Read off the bid's own status rather than stored on the tender:
+        `awarded_bid` deliberately stays empty until the fee is settled, so
+        that every vendor-facing query keyed on it -- their project list, the
+        execution endpoints -- cannot see a project that is not confirmed.
+        """
+        if self.status != self.Status.PENDING_CONFIRMATION:
+            return None
+        return self.bids.filter(status=TenderBid.Status.SELECTED).first()
+
+    @property
+    def pending_confirmation_fee(self):
+        """The fee still owed on this tender, if the customer owes one."""
+        return self.confirmation_fees.filter(
+            status=TenderConfirmationFee.Status.PENDING
+        ).first()
+
+    @property
     def location_label(self):
         """One-line location for cards and tables."""
         parts = [self.address_district, self.address_state, self.address_pincode]
@@ -359,6 +455,10 @@ class TenderBid(models.Model):
 
     class Status(models.TextChoices):
         SUBMITTED = 'SUBMITTED', 'Submitted'
+        # Chosen by the customer, but not theirs until the confirmation fee
+        # is paid. The vendor is not told at this point -- a selection that
+        # is never paid for would otherwise read to them as a won project.
+        SELECTED = 'SELECTED', 'Selected — awaiting confirmation'
         ACCEPTED = 'ACCEPTED', 'Accepted'
         REJECTED = 'REJECTED', 'Not Selected'
         WITHDRAWN = 'WITHDRAWN', 'Withdrawn'
@@ -422,6 +522,150 @@ class TenderBid(models.Model):
         to know before choosing.
         """
         return sum((m.amount for m in self.milestones.all()), start=0)
+
+
+class TenderConfirmationFee(models.Model):
+    """
+    What the customer owes the platform for confirming the bid they picked,
+    and the Razorpay order that settles it.
+
+    This is the one place in the tender flow where money actually moves
+    through us. Milestones only record what the customer says they have
+    settled with the vendor directly; this is charged, captured and held in
+    our own Razorpay account, so it carries the same gateway fields a booking
+    Payment does.
+
+    It is a model of its own rather than a `payments.Payment` because none of
+    the escrow half applies: a platform fee is never released to a vendor and
+    never paid out, so a Payment row with a null booking would carry a payout
+    status that could only ever be wrong.
+
+    `percent` and `bid_amount` are snapshots. An admin changing the rate must
+    not silently re-price a fee a customer is already looking at, and the
+    figure charged has to still be explainable a year later.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = 'PENDING', 'Awaiting payment'
+        PAID = 'PAID', 'Paid'
+        # The customer released their choice, or the tender was cancelled
+        # under them, before paying.
+        CANCELLED = 'CANCELLED', 'Cancelled'
+        # An admin awarded the tender without it -- settled off-platform, or
+        # simply forgiven. `notes` says which.
+        WAIVED = 'WAIVED', 'Waived'
+
+    OPEN_STATUSES = (Status.PENDING,)
+
+    tender = models.ForeignKey(
+        Tender, on_delete=models.CASCADE, related_name='confirmation_fees'
+    )
+    bid = models.ForeignKey(
+        TenderBid, on_delete=models.CASCADE, related_name='confirmation_fees',
+        help_text="The bid this fee confirms",
+    )
+
+    percent = models.DecimalField(
+        max_digits=5, decimal_places=2,
+        help_text="The rate at the moment the customer chose, not today's",
+    )
+    bid_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, help_text="What the bid was worth then"
+    )
+    amount = models.DecimalField(
+        max_digits=12, decimal_places=2, help_text="Rupees due to the platform"
+    )
+    currency = models.CharField(max_length=8, default='INR')
+
+    status = models.CharField(
+        max_length=10, choices=Status.choices, default=Status.PENDING,
+        db_index=True,
+    )
+
+    # Razorpay's identifiers. The order is opened when the customer taps pay;
+    # the rest only exist once they have actually been through Checkout.
+    razorpay_order_id = models.CharField(max_length=64, blank=True, db_index=True)
+    razorpay_payment_id = models.CharField(max_length=64, blank=True, db_index=True)
+    razorpay_signature = models.CharField(max_length=128, blank=True)
+    method = models.CharField(max_length=30, blank=True, help_text="upi / card / netbanking")
+    failure_reason = models.TextField(blank=True)
+
+    # False for rzp_test_* keys, so test takings never inflate real reporting.
+    is_live = models.BooleanField(default=False)
+
+    notes = models.TextField(
+        blank=True, help_text="Why it was waived or cancelled, for the record"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    paid_at = models.DateTimeField(null=True, blank=True)
+    closed_at = models.DateTimeField(
+        null=True, blank=True, help_text="When it was cancelled or waived"
+    )
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['status', '-created_at'])]
+        constraints = [
+            # One live fee per tender. Two would mean two held selections,
+            # and a customer could pay for the cheaper one to win the dearer.
+            models.UniqueConstraint(
+                fields=['tender'],
+                condition=models.Q(status='PENDING'),
+                name='one_pending_confirmation_fee_per_tender',
+            ),
+            # Orders are how the webhook finds its way back here, so two rows
+            # must never answer to the same one. Blank is exempt: a fee that
+            # has not reached Checkout yet has no order at all.
+            models.UniqueConstraint(
+                fields=['razorpay_order_id'],
+                condition=~models.Q(razorpay_order_id=''),
+                name='unique_confirmation_fee_order',
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.amount} confirmation fee on {self.tender.code} ({self.status})"
+
+    @property
+    def is_paid(self):
+        return self.status == self.Status.PAID
+
+    @property
+    def amount_paise(self):
+        return to_paise(self.amount)
+
+    @property
+    def is_open(self):
+        """Still owed -- the app shows a Pay button while this is true."""
+        return self.status in self.OPEN_STATUSES
+
+    def mark_captured(self, *, payment_id='', method='', signature='', save=True):
+        """
+        Move to PAID, unless we are already there.
+
+        Razorpay delivers the same event more than once by design and the
+        browser callback races the webhook, so this has to be safe to call
+        repeatedly with the same payload. Returns True only for the call that
+        actually moved it, which is what stops the award being run twice.
+        """
+        if self.status != self.Status.PENDING:
+            return False
+        self.status = self.Status.PAID
+        self.paid_at = self.paid_at or timezone.now()
+        if payment_id:
+            self.razorpay_payment_id = payment_id
+        if method:
+            self.method = method
+        if signature:
+            self.razorpay_signature = signature
+        if save:
+            self.save(update_fields=[
+                'status', 'paid_at', 'razorpay_payment_id', 'method',
+                'razorpay_signature', 'updated_at',
+            ])
+        return True
 
 
 class TenderMilestone(models.Model):

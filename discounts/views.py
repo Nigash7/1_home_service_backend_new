@@ -1,4 +1,6 @@
 from decimal import Decimal
+
+from services.pricing import line_total
 from rest_framework import permissions, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -35,9 +37,11 @@ class ApplicableDiscountsView(APIView):
         if not items:
             return Response({'discount': None, 'discount_amount': 0})
 
+        # Same parsing as the booking subtotal, so the discount is worked out
+        # against the figure the customer will actually be charged. Quantity is
+        # a Decimal: a per-sq-ft line carries 1000, a per-kg line 2.5.
         cart_total = sum(
-            Decimal(str(item.get('price', 0))) * int(item.get('qty', 1))
-            for item in items
+            (line_total(item) for item in items), Decimal('0')
         )
 
         # Find all applicable discounts and pick the best one

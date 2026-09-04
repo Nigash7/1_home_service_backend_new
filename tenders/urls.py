@@ -11,6 +11,8 @@ from .views import (
     TenderBidsListView,
     TenderCancelView,
     TenderCompleteView,
+    TenderConfirmationFeeView,
+    TenderConfirmationVerifyView,
     TenderCreateView,
     TenderDetailView,
     TenderMilestonePayView,
@@ -34,6 +36,11 @@ urlpatterns = [
     path('my-bids/', MyBidsListView.as_view(), name='tender-my-bids'),
     path('awarded/', MyProjectsListView.as_view(), name='tender-awarded-list'),
 
+    # ---- Confirmation fee ----
+    # Ahead of '<int:pk>/' for the same reason as the words above.
+    path('confirmation/verify/', TenderConfirmationVerifyView.as_view(),
+         name='tender-confirmation-verify'),
+
     # ---- Bids and milestones by their own ID ----
     path('bids/<int:pk>/accept/', TenderBidAcceptView.as_view(), name='tender-bid-accept'),
     path('milestones/<int:pk>/reach/', TenderMilestoneReachView.as_view(), name='tender-milestone-reach'),
@@ -46,6 +53,8 @@ urlpatterns = [
     path('<int:pk>/cancel/', TenderCancelView.as_view(), name='tender-cancel'),
     path('<int:pk>/attachments/', TenderAttachmentUploadView.as_view(), name='tender-attachment-upload'),
     path('<int:pk>/bids/', TenderBidsListView.as_view(), name='tender-bids-list'),
+    path('<int:pk>/confirmation/', TenderConfirmationFeeView.as_view(),
+         name='tender-confirmation'),
     path('<int:pk>/bid/', TenderMyBidView.as_view(), name='tender-my-bid'),
 
     # ---- Execution ----

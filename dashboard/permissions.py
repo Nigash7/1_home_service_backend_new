@@ -43,7 +43,8 @@ PERMISSION_GROUPS = [
         ('tenders.view', 'View tenders',
          'See customer-posted tenders and the bids on them.'),
         ('tenders.manage', 'Manage tenders',
-         'Approve, reject, award or cancel a tender.'),
+         'Approve, reject, award or cancel a tender, release a held '
+         'selection, and set the confirmation fee.'),
     ]),
     ('Vendors', [
         ('vendors.view', 'View vendors',
@@ -163,6 +164,8 @@ URL_PERMISSIONS = {
     'tender_reject': 'tenders.manage',
     'tender_award': 'tenders.manage',
     'tender_cancel': 'tenders.manage',
+    'tender_release_selection': 'tenders.manage',
+    'tender_settings': {'GET': 'tenders.view', 'POST': 'tenders.manage'},
 
     # Vendors
     'vendors_list': 'vendors.view',

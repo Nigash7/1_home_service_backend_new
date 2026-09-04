@@ -296,6 +296,12 @@ class RazorpayWebhookView(APIView):
 
         payment = Payment.objects.filter(razorpay_order_id=order_id).first()
         if payment is None:
+            # Not a booking. Tender confirmation fees are charged through the
+            # same Razorpay account and so arrive on this endpoint too; they
+            # keep their own records rather than a Payment row, because none
+            # of the escrow half applies to a platform fee.
+            if self._handle_tender_fee(event_type, order_id, entity):
+                return
             logger.warning("payments: webhook for unknown order %s", order_id)
             return
         event.payment = payment
@@ -319,6 +325,35 @@ class RazorpayWebhookView(APIView):
             services.apply_refund(
                 payment, amount_refunded_rupees=to_rupees(refunded)
             )
+
+    def _handle_tender_fee(self, event_type, order_id, entity):
+        """
+        A tender confirmation fee settling. Returns True when the order was
+        one, so the caller stops looking for a booking that was never there.
+
+        Imported here rather than at module level: tenders reaches into
+        payments for the gateway, and a top-level import back would close the
+        loop.
+        """
+        from tenders import services as tender_services
+
+        fee = tender_services.fee_for_order(order_id)
+        if fee is None:
+            return False
+
+        if event_type in ('payment.captured', 'order.paid'):
+            tender_services.mark_fee_paid(
+                fee,
+                payment_id=entity.get('id') or '',
+                method=entity.get('method') or '',
+            )
+        elif event_type == 'payment.failed':
+            tender_services.mark_fee_failed(
+                fee,
+                reason=entity.get('error_description') or '',
+                payment_id=entity.get('id') or '',
+            )
+        return True
 
     def _handle_payout(self, event_type, data):
         """

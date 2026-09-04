@@ -54,8 +54,10 @@ class CustomerProfileSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'username', 'first_name', 'last_name', 'phone_number', 'email',
             'address', 'state', 'district', 'pincode', 'latitude', 'longitude',
-            'is_profile_complete',
+            'is_profile_complete', 'email_verified',
         ]
+        # Set by the email OTP flow alone; a profile save can never claim it.
+        read_only_fields = ['email_verified']
 
     def get_is_profile_complete(self, obj):
         return bool(
@@ -66,8 +68,37 @@ class CustomerProfileSerializer(serializers.ModelSerializer):
             and obj.pincode
         )
 
+    def validate(self, attrs):
+        """
+        An email may only reach the account through the OTP flow, which saves
+        it itself the moment a code checks out. So by then a verified address
+        already matches what is stored -- anything else is an address nobody
+        has proved, and is refused here.
+
+        An address that predates verification is left alone: those customers
+        are not locked out of saving their own profile, they simply show as
+        unverified until they confirm it.
+        """
+        user_data = attrs.get('user', {})
+        if 'email' in user_data:
+            new_email = (user_data['email'] or '').strip().lower()
+            current = (self.instance.user.email or '').strip().lower() if self.instance else ''
+            if new_email and new_email != current:
+                raise serializers.ValidationError({
+                    'email': 'Please verify this email address with the code '
+                             'we send before saving.'
+                })
+            # Store the same normalised form the OTP flow wrote, so a save
+            # cannot quietly turn a verified address into a different string.
+            user_data['email'] = new_email
+        return attrs
+
     def update(self, instance, validated_data):
         user_data = validated_data.pop('user', {})
+        # Clearing the email drops the verified badge with it, so whatever is
+        # entered next has to be confirmed on its own merits.
+        if 'email' in user_data and not (user_data['email'] or '').strip():
+            instance.email_verified = False
         for attr, value in user_data.items():
             setattr(instance.user, attr, value)
         instance.user.save()

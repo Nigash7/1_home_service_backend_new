@@ -67,6 +67,20 @@
                         </p>
                         {% endif %}
                     </div>
+                    <div class="col-span-2">
+                        <div class="text-gray-500">Based in</div>
+                        <div class="text-gray-900 font-medium">{{ vendor.location_label|default:"—" }}</div>
+                    </div>
+                    <div class="col-span-2">
+                        <div class="text-gray-500">Serves</div>
+                        <div class="flex flex-wrap gap-2 mt-1">
+                            {% for label in vendor.service_region_labels %}
+                                <span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">{{ label }}</span>
+                            {% empty %}
+                                <span class="text-xs text-gray-500">Everywhere — no states picked</span>
+                            {% endfor %}
+                        </div>
+                    </div>
                     {% if vendor.latitude and vendor.longitude %}
                     <div class="col-span-2">
                         <div class="text-gray-500">Location</div>

@@ -389,6 +389,20 @@ TENDER_BID_RECEIVED = _e(
     "{vendor_name} quoted {amount}. You now have {bid_count} bid(s) to compare.",
     route="/tenders/{tender_id}/bids",
 )
+TENDER_CONFIRMATION_DUE = _e(
+    "tender.confirmation_due", CUSTOMER, CAT_PAYMENT,
+    "Confirm {vendor_name} to start",
+    "Pay the {percent}% confirmation fee of {fee_amount} to lock {vendor_name} "
+    "in for {tender_title}. Your choice is held until you do.",
+    route="/tenders/{tender_id}",
+)
+TENDER_CONFIRMATION_PAID = _e(
+    "tender.confirmation_paid", CUSTOMER, CAT_PAYMENT,
+    "Confirmation fee received",
+    "We have received {fee_amount} for {tender_code}. {vendor_name} has been "
+    "told the job is theirs.",
+    route="/tenders/{tender_id}",
+)
 TENDER_AWARDED = _e(
     "tender.awarded", CUSTOMER, CAT_BOOKING,
     "Deal confirmed",
@@ -469,6 +483,13 @@ ADMIN_TENDER_AWARDED = _e(
     "admin.tender_awarded", ADMIN, CAT_BOOKING,
     "Tender awarded",
     "{tender_code} went to {vendor_name} for {amount}.",
+    route="/tenders/{tender_id}/",
+)
+ADMIN_TENDER_CONFIRMATION_PAID = _e(
+    "admin.tender_confirmation_paid", ADMIN, CAT_PAYMENT,
+    "Confirmation fee collected",
+    "{fee_amount} ({percent}% of {amount}) received on {tender_code}. "
+    "{vendor_name} has the job.",
     route="/tenders/{tender_id}/",
 )
 ADMIN_TENDER_COMPLETED = _e(

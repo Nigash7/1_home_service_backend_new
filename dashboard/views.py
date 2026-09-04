@@ -21,9 +21,16 @@ from vendors import bank_services
 from vendors import payout_services as vendor_payout_services
 from payments import payoutx
 from payments.payoutx import PayoutError
-from tenders.models import Tender, TenderBid
+from tenders.models import (
+    Tender, TenderBid, TenderConfirmationFee, TenderSettings,
+)
 from tenders import notifications as tender_notify
-from vendors.models import Vendor, VendorDocument
+from tenders import services as tender_services
+from vendors.models import Vendor, VendorDocument, set_vendor_service_regions
+from vendors.regions import INDIAN_STATES, state_key
+from services.pricing import PricingType
+from tenders.project_types import ProjectType
+from .uploads import apply_uploaded_file
 from services.models import ServiceCategory  # adjust to your actual app name
 
 from . import security
@@ -455,7 +462,7 @@ def vendors_list_view(request):
     search = request.GET.get('search', '').strip()
 
     vendors = Vendor.objects.select_related('user').prefetch_related(
-        'categories', 'subcategories', 'services'
+        'categories', 'subcategories', 'services', 'service_regions'
     ).order_by('-id')
 
     if verification:
@@ -495,7 +502,8 @@ def vendors_list_view(request):
 def vendor_detail_view(request, vendor_id):
     vendor = get_object_or_404(
         Vendor.objects.select_related('user').prefetch_related(
-            'categories', 'subcategories', 'services', 'documents'
+            'categories', 'subcategories', 'services', 'documents',
+            'service_regions'
         ),
         id=vendor_id
     )
@@ -621,7 +629,6 @@ def category_edit_view(request, category_id):
         sort_order = request.POST.get('sort_order', '0')
         description = request.POST.get('description', '').strip()
         is_active = request.POST.get('is_active') == 'on'
-        icon = request.FILES.get('icon')
 
         if not name:
             messages.error(request, 'Category name is required.')
@@ -631,8 +638,7 @@ def category_edit_view(request, category_id):
             category.base_price = base_price or 0
             category.sort_order = sort_order or 0
             category.is_active = is_active
-            if icon:
-                category.icon = icon
+            apply_uploaded_file(request, category, 'icon')
             category.save()
             messages.success(request, f'Category "{name}" updated.')
             return redirect('categories_list')
@@ -729,7 +735,6 @@ def subcategory_edit_view(request, subcategory_id):
         description = request.POST.get('description', '').strip()
         base_price = request.POST.get('base_price', '0')
         is_active = request.POST.get('is_active') == 'on'
-        icon = request.FILES.get('icon')
 
         if not name:
             messages.error(request, 'Subcategory name is required.')
@@ -738,8 +743,7 @@ def subcategory_edit_view(request, subcategory_id):
             sub.description = description
             sub.base_price = base_price or 0
             sub.is_active = is_active
-            if icon:
-                sub.icon = icon
+            apply_uploaded_file(request, sub, 'icon')
             sub.save()
             messages.success(request, f'Subcategory "{name}" updated.')
             return redirect('subcategories_list', category_id=sub.category.id)
@@ -819,6 +823,13 @@ def service_add_view(request, category_id=None, subcategory_id=None):
         name = request.POST.get('name', '').strip()
         description = request.POST.get('description', '').strip()
         price = request.POST.get('price', '0')
+        pricing_type = request.POST.get('pricing_type', PricingType.FIXED)
+        # Only meaningful on a quote service; ignored for the rest so an old
+        # value cannot linger after the type is changed.
+        tender_project_type = (
+            request.POST.get('tender_project_type', '').strip()
+            if pricing_type == PricingType.CUSTOM_QUOTE else ''
+        )
         duration_minutes = request.POST.get('duration_minutes', '60')
         is_active = request.POST.get('is_active') == 'on'
         image = request.FILES.get('image')
@@ -833,6 +844,8 @@ def service_add_view(request, category_id=None, subcategory_id=None):
                     name=name,
                     description=description,
                     price=price or 0,
+                    pricing_type=pricing_type,
+                    tender_project_type=tender_project_type,
                     duration_minutes=duration_minutes or 60,
                     is_active=is_active,
                 )
@@ -851,6 +864,8 @@ def service_add_view(request, category_id=None, subcategory_id=None):
         'active_page': 'categories',
         'category': category,
         'subcategory': subcategory,
+        'pricing_types': PricingType.choices,
+        'project_types': ProjectType.choices,
         'is_edit': False,
     })
 
@@ -865,9 +880,15 @@ def service_edit_view(request, service_id):
         name = request.POST.get('name', '').strip()
         description = request.POST.get('description', '').strip()
         price = request.POST.get('price', '0')
+        pricing_type = request.POST.get('pricing_type', PricingType.FIXED)
+        # Only meaningful on a quote service; ignored for the rest so an old
+        # value cannot linger after the type is changed.
+        tender_project_type = (
+            request.POST.get('tender_project_type', '').strip()
+            if pricing_type == PricingType.CUSTOM_QUOTE else ''
+        )
         duration_minutes = request.POST.get('duration_minutes', '60')
         is_active = request.POST.get('is_active') == 'on'
-        image = request.FILES.get('image')
 
         if not name:
             messages.error(request, 'Service name is required.')
@@ -875,10 +896,11 @@ def service_edit_view(request, service_id):
             svc.name = name
             svc.description = description
             svc.price = price or 0
+            svc.pricing_type = pricing_type
+            svc.tender_project_type = tender_project_type
             svc.duration_minutes = duration_minutes or 60
             svc.is_active = is_active
-            if image:
-                svc.image = image
+            apply_uploaded_file(request, svc, 'image')
             svc.save()
             messages.success(request, f'Service "{name}" updated.')
             if svc.subcategory:
@@ -891,6 +913,8 @@ def service_edit_view(request, service_id):
         'category': svc.category,
         'subcategory': svc.subcategory,
         'service': svc,
+        'pricing_types': PricingType.choices,
+        'project_types': ProjectType.choices,
         'is_edit': True,
     })
 
@@ -3382,12 +3406,100 @@ def _apply_pro_vendor_fields(request, vendor):
     vendor.experience_years = request.POST.get('experience_years') or 0
     vendor.pro_sort_order = request.POST.get('pro_sort_order') or 0
 
-    photo = request.FILES.get('pro_photo')
-    if photo:
-        vendor.pro_photo = photo
-    banner = request.FILES.get('pro_banner')
-    if banner:
-        vendor.pro_banner = banner
+    # A pro's photo and banner are both optional, so both can be taken away
+    # again rather than only ever swapped.
+    apply_uploaded_file(request, vendor, 'pro_photo')
+    apply_uploaded_file(request, vendor, 'pro_banner')
+
+
+def _vendor_phone_clash(phone_number, exclude_user_id=None):
+    """
+    The other *vendor* already using this phone number, or None.
+
+    Scoped to vendors on purpose. One person is very often both a customer and
+    a vendor here -- they book work in the customer app and take work in the
+    vendor app -- and that is the same phone in both places. Customer sign-in
+    looks its account up by phone *and* role, so the two never reach for each
+    other; only a second vendor on the same number is a real clash, because
+    that is a number an admin could no longer tell apart.
+    """
+    if not phone_number:
+        return None
+
+    others = User.objects.filter(
+        phone_number=phone_number, role=User.Role.VENDOR,
+    )
+    if exclude_user_id:
+        others = others.exclude(id=exclude_user_id)
+    return others.first()
+
+
+def _phone_clash_message(other):
+    """Names the vendor holding the number, so the admin can go and look."""
+    return (
+        f'Vendor "{other.get_full_name() or other.username}" already uses this '
+        f'phone number. Two vendor accounts cannot share one.'
+    )
+
+
+def _apply_vendor_service_regions(request, vendor):
+    """
+    Stores where this vendor takes work, from the state checkboxes on the
+    vendor form and the districts box that each ticked state reveals.
+
+    A full replace, like the categories beside it: the form posts every place
+    the vendor covers, so unticking a state drops it and clearing a districts
+    box widens that state back out to all of it. Ticking no state at all puts
+    the vendor back on every state, which is where every vendor recorded
+    before this field existed still sits.
+    """
+    entries = []
+    for state in request.POST.getlist('service_states'):
+        # The districts box is named after its state, because only ticked
+        # states are posted back and parallel lists would not line up.
+        raw = request.POST.get(f'districts__{state}', '')
+        districts = [part.strip() for part in raw.split(',') if part.strip()]
+        if districts:
+            entries.extend((state, district) for district in districts)
+        else:
+            # No districts named means the whole state.
+            entries.append((state, ''))
+
+    set_vendor_service_regions(vendor, entries)
+
+
+def _vendor_form_context(vendor=None):
+    """
+    The "where this vendor works" checkboxes, ticked to match the vendor,
+    each carrying the districts they were narrowed to.
+
+    Any state the vendor covers that is not on the standard list -- imported
+    data, a spelling we do not know -- is appended so editing the vendor never
+    silently drops it.
+    """
+    covered = {}
+    if vendor:
+        for row in vendor.service_regions.all():
+            covered.setdefault(row.state, [])
+            if row.district:
+                covered[row.state].append(row.district)
+
+    names = list(INDIAN_STATES)
+    known = {state_key(name) for name in names}
+    names += sorted(
+        name for name in covered if state_key(name) not in known
+    )
+
+    covered_keys = {state_key(name): name for name in covered}
+    options = []
+    for name in names:
+        match = covered_keys.get(state_key(name))
+        options.append({
+            'name': name,
+            'checked': match is not None,
+            'districts': ', '.join(covered.get(match, [])) if match else '',
+        })
+    return {'state_options': options}
 
 
 def _save_vendor_documents(request, vendor):
@@ -3428,12 +3540,16 @@ def vendor_add_view(request):
         # Vendor fields
         service_area = request.POST.get('service_area', '').strip()
         address = request.POST.get('address', '').strip()
+        state = request.POST.get('state', '').strip()
+        district = request.POST.get('district', '').strip()
         latitude = request.POST.get('latitude') or None
         longitude = request.POST.get('longitude') or None
         verification_status = request.POST.get('verification_status', 'PENDING')
         is_available = request.POST.get('is_available') == 'on'
         status = request.POST.get('status', 'AVAILABLE')
         category_ids = request.POST.getlist('categories')
+
+        phone_clash = _vendor_phone_clash(phone_number)
 
         if not username or not password:
             messages.error(request, 'Username and password are required.')
@@ -3443,8 +3559,8 @@ def vendor_add_view(request):
             messages.error(request, 'Service area is required.')
         elif User.objects.filter(username=username).exists():
             messages.error(request, 'This username is already taken.')
-        elif phone_number and User.objects.filter(phone_number=phone_number).exists():
-            messages.error(request, 'A user with this phone number already exists.')
+        elif phone_clash:
+            messages.error(request, _phone_clash_message(phone_clash))
         else:
             try:
                 user = User.objects.create(
@@ -3462,6 +3578,8 @@ def vendor_add_view(request):
                     user=user,
                     service_area=service_area,
                     address=address,
+                    state=state,
+                    district=district,
                     latitude=latitude,
                     longitude=longitude,
                     verification_status=verification_status,
@@ -3471,6 +3589,7 @@ def vendor_add_view(request):
                 if category_ids:
                     vendor.categories.set(category_ids)
                 _apply_vendor_coverage(request, vendor)
+                _apply_vendor_service_regions(request, vendor)
 
                 _apply_pro_vendor_fields(request, vendor)
                 vendor.save()
@@ -3489,6 +3608,7 @@ def vendor_add_view(request):
         'active_page': 'vendors',
         'categories': ServiceCategory.objects.filter(is_active=True).order_by('name'),
         'coverage_tree': _coverage_tree(),
+        **_vendor_form_context(),
         'is_edit': False,
     })
 
@@ -3505,12 +3625,17 @@ def vendor_edit_view(request, vendor_id):
         new_password = request.POST.get('new_password', '').strip()
         service_area = request.POST.get('service_area', '').strip()
         address = request.POST.get('address', '').strip()
+        state = request.POST.get('state', '').strip()
+        district = request.POST.get('district', '').strip()
         latitude = request.POST.get('latitude') or None
         longitude = request.POST.get('longitude') or None
         verification_status = request.POST.get('verification_status', 'PENDING')
         is_available = request.POST.get('is_available') == 'on'
         status = request.POST.get('status', 'AVAILABLE')
         category_ids = request.POST.getlist('categories')
+
+        phone_clash = _vendor_phone_clash(
+            phone_number, exclude_user_id=vendor.user.id)
 
         if not username:
             messages.error(request, 'Username is required.')
@@ -3520,8 +3645,8 @@ def vendor_edit_view(request, vendor_id):
             messages.error(request, 'Service area is required.')
         elif User.objects.filter(username=username).exclude(id=vendor.user.id).exists():
             messages.error(request, 'This username is already taken.')
-        elif phone_number and User.objects.filter(phone_number=phone_number).exclude(id=vendor.user.id).exists():
-            messages.error(request, 'This phone number is already used by another account.')
+        elif phone_clash:
+            messages.error(request, _phone_clash_message(phone_clash))
         else:
             vendor.user.username = username
             vendor.user.first_name = first_name
@@ -3534,6 +3659,8 @@ def vendor_edit_view(request, vendor_id):
 
             vendor.service_area = service_area
             vendor.address = address
+            vendor.state = state
+            vendor.district = district
             vendor.latitude = latitude
             vendor.longitude = longitude
             vendor.verification_status = verification_status
@@ -3544,6 +3671,7 @@ def vendor_edit_view(request, vendor_id):
 
             vendor.categories.set(category_ids)
             _apply_vendor_coverage(request, vendor)
+            _apply_vendor_service_regions(request, vendor)
 
             saved_docs = _save_vendor_documents(request, vendor)
 
@@ -3564,6 +3692,7 @@ def vendor_edit_view(request, vendor_id):
         'vendor_category_ids': list(vendor.categories.values_list('id', flat=True)),
         'vendor_subcategory_ids': list(vendor.subcategories.values_list('id', flat=True)),
         'vendor_service_ids': list(vendor.services.values_list('id', flat=True)),
+        **_vendor_form_context(vendor),
         'is_edit': True,
     })
     # ---------- Auto-Assign (Round Robin) ----------
@@ -4190,6 +4319,13 @@ def tender_detail_view(request, tender_id):
         'matching_vendors': matching_vendors,
         'matching_count': len(matching_vendors),
         'review': getattr(tender, 'review', None),
+        # Every fee this tender has raised, not just the live one: a customer
+        # who picked, released and picked again leaves a trail worth reading.
+        'confirmation_fees': tender.confirmation_fees.select_related(
+            'bid__vendor__user'
+        ),
+        'pending_fee': tender.pending_confirmation_fee,
+        'selected_bid': tender.selected_bid,
         'tenders_pending_count': Tender.objects.filter(
             status=Tender.Status.PENDING_APPROVAL
         ).count(),
@@ -4270,45 +4406,119 @@ def tender_award_view(request, tender_id):
     tender = get_object_or_404(Tender, id=tender_id)
     bid_id = request.POST.get('bid_id')
 
-    if tender.status != Tender.Status.OPEN:
+    if tender.status not in (Tender.Status.OPEN, Tender.Status.PENDING_CONFIRMATION):
         messages.error(request, 'Only an open tender can be awarded.')
         return redirect('tender_detail', tender_id=tender_id)
 
     try:
         bid = tender.bids.select_related('vendor__user').get(
-            id=bid_id, status=TenderBid.Status.SUBMITTED
+            id=bid_id,
+            status__in=[TenderBid.Status.SUBMITTED, TenderBid.Status.SELECTED],
         )
     except TenderBid.DoesNotExist:
         messages.error(request, 'That bid is not available to accept.')
         return redirect('tender_detail', tender_id=tender_id)
 
-    now = timezone.now()
-    losing_bids = list(
-        tender.bids.exclude(id=bid.id)
-        .filter(status=TenderBid.Status.SUBMITTED)
-        .select_related('vendor__user')
-    )
+    # Awarding from here goes ahead without the confirmation fee -- this is
+    # the path for a customer who settled it over the phone, or one the
+    # platform is letting through. The waived row keeps that visible rather
+    # than leaving a fee that looks like it was simply never chased.
+    fee = tender.pending_confirmation_fee
+    if fee is not None:
+        tender_services.waive_fee(
+            fee,
+            reason=f'Awarded from the dashboard by {request.admin_user}.',
+        )
 
-    with transaction.atomic():
-        bid.status = TenderBid.Status.ACCEPTED
-        bid.decided_at = now
-        bid.save(update_fields=['status', 'decided_at', 'updated_at'])
+    tender_services.confirm_award(tender, bid)
 
-        tender.bids.exclude(id=bid.id).filter(
-            status=TenderBid.Status.SUBMITTED
-        ).update(status=TenderBid.Status.REJECTED, decided_at=now)
-
-        tender.awarded_bid = bid
-        tender.status = Tender.Status.AWARDED
-        tender.awarded_at = now
-        tender.save(update_fields=['awarded_bid', 'status', 'awarded_at', 'updated_at'])
-
-    tender_notify.notify_customer_awarded(tender, bid)
-    tender_notify.notify_vendor_won(tender, bid)
-    tender_notify.notify_vendors_lost(tender, losing_bids)
-
-    messages.success(request, f'{bid.vendor.display_name} has been awarded this tender.')
+    if fee is not None:
+        messages.success(
+            request,
+            f'{bid.vendor.display_name} has been awarded this tender. The '
+            f'{fee.amount} confirmation fee was waived.'
+        )
+    else:
+        messages.success(
+            request, f'{bid.vendor.display_name} has been awarded this tender.'
+        )
     return redirect('tender_detail', tender_id=tender_id)
+
+
+@admin_login_required
+def tender_release_selection_view(request, tender_id):
+    """
+    Hand a held selection back: the customer picked a vendor, never paid to
+    confirm it, and now wants -- or needs -- the tender open again.
+    """
+    if request.method != 'POST':
+        return redirect('tender_detail', tender_id=tender_id)
+
+    tender = get_object_or_404(Tender, id=tender_id)
+    reason = (request.POST.get('reason') or '').strip()
+
+    try:
+        tender_services.release_selection(
+            tender,
+            reason=reason or f'Released from the dashboard by {request.admin_user}.',
+        )
+    except ValueError as exc:
+        messages.error(request, str(exc))
+        return redirect('tender_detail', tender_id=tender_id)
+
+    messages.success(
+        request, 'Selection released. The tender is open for bids again.'
+    )
+    return redirect('tender_detail', tender_id=tender_id)
+
+
+@admin_login_required
+def tender_settings_view(request):
+    """The platform's own terms on tenders -- today, the confirmation fee."""
+    tender_settings = TenderSettings.get_solo()
+
+    if request.method == 'POST':
+        percent = (request.POST.get('confirmation_fee_percent') or '0').strip()
+        try:
+            percent = Decimal(percent)
+        except (InvalidOperation, TypeError):
+            messages.error(request, 'Enter the fee as a number, e.g. 10.')
+            return redirect('tender_settings')
+
+        if percent < 0 or percent > 100:
+            messages.error(request, 'The fee has to be between 0 and 100 percent.')
+            return redirect('tender_settings')
+
+        tender_settings.confirmation_fee_percent = percent
+        tender_settings.is_confirmation_fee_active = (
+            request.POST.get('is_confirmation_fee_active') == 'on'
+        )
+        tender_settings.save()
+        messages.success(
+            request,
+            'Saved. New selections are charged at this rate -- fees already '
+            'raised keep the rate they were raised at.'
+        )
+        return redirect('tender_settings')
+
+    fees = TenderConfirmationFee.objects.select_related(
+        'tender__customer__user', 'bid__vendor__user'
+    )
+    collected = fees.filter(
+        status=TenderConfirmationFee.Status.PAID
+    ).aggregate(total=models.Sum('amount'), count=models.Count('id'))
+    awaiting = fees.filter(
+        status=TenderConfirmationFee.Status.PENDING
+    ).aggregate(total=models.Sum('amount'), count=models.Count('id'))
+
+    return render(request, 'dashboard/tender_settings.html', {
+        'admin_user': request.admin_user,
+        'active_page': 'tenders',
+        'tender_settings': tender_settings,
+        'collected': collected,
+        'awaiting': awaiting,
+        'recent_fees': fees.order_by('-created_at')[:20],
+    })
 
 
 @admin_login_required

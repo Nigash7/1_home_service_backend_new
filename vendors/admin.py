@@ -2,11 +2,20 @@ from django import forms
 from django.contrib import admin
 from django.contrib.auth.hashers import make_password
 from accounts.models import User
-from .models import Vendor, VendorDocument
+from .models import Vendor, VendorDocument, VendorServiceRegion
 
 
 class VendorDocumentInline(admin.TabularInline):
     model = VendorDocument
+    extra = 1
+
+
+class VendorServiceRegionInline(admin.TabularInline):
+    """
+    Where this vendor takes work. None listed means every state; a row with
+    no district means the whole of that state.
+    """
+    model = VendorServiceRegion
     extra = 1
 
 
@@ -26,7 +35,8 @@ class VendorAdminForm(forms.ModelForm):
 
     class Meta:
         model = Vendor
-        fields = ['categories', 'service_area', 'address', 'verification_status', 'is_available']
+        fields = ['categories', 'service_area', 'address', 'state', 'district',
+                  'verification_status', 'is_available']
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -73,7 +83,7 @@ class VendorAdmin(admin.ModelAdmin):
     list_display = ('user', 'service_area', 'verification_status', 'is_available', 'category_list', 'created_at')
     list_filter = ('verification_status', 'is_available', 'categories', 'service_area')
     search_fields = ('user__username', 'user__first_name', 'user__last_name', 'service_area')
-    inlines = [VendorDocumentInline]
+    inlines = [VendorServiceRegionInline, VendorDocumentInline]
 
     fieldsets = (
         ('Login Credentials (Vendor App)', {

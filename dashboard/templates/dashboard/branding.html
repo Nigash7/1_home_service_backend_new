@@ -41,12 +41,7 @@
                 {% csrf_token %}
                 <input type="hidden" name="app" value="CUSTOMER">
 
-                <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-2">Logo {% if not customer_branding %}*{% endif %}</label>
-                    <input type="file" name="logo" accept="image/*" {% if not customer_branding %}required{% endif %}
-                           class="w-full text-sm border border-gray-300 rounded-lg p-2 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary-100 file:text-primary-700 hover:file:bg-primary-200">
-                    <p class="text-xs text-gray-500 mt-1">Square PNG with a transparent background, around 512&times;512</p>
-                </div>
+                {% include "dashboard/_file_field.html" with name="logo" label="Logo" current=customer_branding.logo removable=False required=True help="Square PNG with a transparent background, around 512x512" %}
 
                 <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-2">App Name</label>
@@ -87,12 +82,7 @@
                 {% csrf_token %}
                 <input type="hidden" name="app" value="VENDOR">
 
-                <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-2">Logo {% if not vendor_branding %}*{% endif %}</label>
-                    <input type="file" name="logo" accept="image/*" {% if not vendor_branding %}required{% endif %}
-                           class="w-full text-sm border border-gray-300 rounded-lg p-2 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary-100 file:text-primary-700 hover:file:bg-primary-200">
-                    <p class="text-xs text-gray-500 mt-1">Square PNG with a transparent background, around 512&times;512</p>
-                </div>
+                {% include "dashboard/_file_field.html" with name="logo" label="Logo" current=vendor_branding.logo removable=False required=True help="Square PNG with a transparent background, around 512x512" %}
 
                 <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-2">App Name</label>

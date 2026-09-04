@@ -7,9 +7,11 @@ guards at each step, because most of the risk here is a vendor seeing or doing
 something that belongs to someone else.
 """
 import base64
+import json
 import shutil
 import tempfile
 from decimal import Decimal
+from unittest import mock
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
@@ -22,7 +24,10 @@ from reviews.models import Review
 from services.models import ServiceCategory, SubCategory
 from vendors.models import Vendor
 
-from .models import Tender, TenderBid, TenderMilestone
+from . import services as tender_services
+from .models import (
+    Tender, TenderBid, TenderConfirmationFee, TenderMilestone, TenderSettings,
+)
 from dashboard.testing import sign_in
 
 # Smallest valid PNG, so ImageField validation has something real to read.
@@ -133,6 +138,25 @@ class TenderFlowTests(MediaSandboxMixin, TestCase):
         tender.status = Tender.Status.OPEN
         tender.save()
         return tender
+
+    def pay_confirmation_fee(self, tender):
+        """
+        Settle the confirmation fee the way a captured Razorpay payment does,
+        without the gateway. Returns the fee, or None when none was raised.
+        """
+        fee = tender.pending_confirmation_fee
+        if fee is None:
+            return None
+        tender_services.mark_fee_paid(fee, payment_id='pay_test', method='upi')
+        fee.refresh_from_db()
+        return fee
+
+    def set_fee_percent(self, percent, *, active=True):
+        settings_row = TenderSettings.get_solo()
+        settings_row.confirmation_fee_percent = Decimal(str(percent))
+        settings_row.is_confirmation_fee_active = active
+        settings_row.save()
+        return settings_row
 
     # ------------------------------------------------- 1-3. post + publish
     def test_customer_creates_tender_as_draft(self):
@@ -569,6 +593,15 @@ class TenderFlowTests(MediaSandboxMixin, TestCase):
         self.client_for(self.customer).post(
             reverse('tender-bid-accept', args=[before[0]['id']]))
 
+        # Picked, but not paid for: still not a number they may ring. Handing
+        # it over here would let a customer choose a vendor, take the number
+        # and release the selection without ever paying.
+        held = self.client_for(self.customer).get(
+            reverse('tender-bids-list', args=[tender.id])).data
+        self.assertIsNone(held[0]['vendor_phone'])
+
+        self.pay_confirmation_fee(tender)
+
         after = self.client_for(self.customer).get(
             reverse('tender-bids-list', args=[tender.id])).data
         self.assertEqual(after[0]['vendor_phone'], '9000000002')
@@ -594,6 +627,17 @@ class TenderFlowTests(MediaSandboxMixin, TestCase):
         response = self.client_for(self.customer).post(
             reverse('tender-bid-accept', args=[winner['id']]))
         self.assertEqual(response.status_code, 200)
+
+        # Held, not awarded: the fee is what turns a choice into a deal.
+        tender.refresh_from_db()
+        self.assertEqual(tender.status, Tender.Status.PENDING_CONFIRMATION)
+        self.assertIsNone(tender.awarded_bid)
+        self.assertEqual(
+            TenderBid.objects.get(vendor=self.vendor_a).status,
+            TenderBid.Status.SUBMITTED,
+        )
+
+        self.pay_confirmation_fee(tender)
 
         tender.refresh_from_db()
         self.assertEqual(tender.status, Tender.Status.AWARDED)
@@ -642,6 +686,7 @@ class TenderFlowTests(MediaSandboxMixin, TestCase):
             format='json').data
         self.client_for(self.customer).post(
             reverse('tender-bid-accept', args=[bid['id']]))
+        self.pay_confirmation_fee(tender)
         tender.refresh_from_db()
         return tender
 
@@ -816,6 +861,7 @@ class TenderFlowTests(MediaSandboxMixin, TestCase):
             format='json').data
         self.client_for(self.customer).post(
             reverse('tender-bid-accept', args=[winning['id']]))
+        self.pay_confirmation_fee(tender)
 
         response = self.client_for(self.vendor_b).get(
             reverse('tender-detail', args=[tender.id]))
@@ -1011,3 +1057,534 @@ class TenderDashboardTests(MediaSandboxMixin, TestCase):
         anonymous = self.client_class()
         response = anonymous.get(reverse('tenders_list'))
         self.assertEqual(response.status_code, 302)
+
+
+class TenderConfirmationFeeTests(MediaSandboxMixin, TestCase):
+    """
+    The money step between picking a bid and winning it.
+
+    Nothing here reaches Razorpay: `payments.gateway` is the only module that
+    talks to it, so stubbing that is enough to walk the whole flow -- order,
+    checkout callback, webhook -- without the network.
+    """
+
+    def setUp(self):
+        self.category = ServiceCategory.objects.create(name='Construction')
+
+        self.customer = self._make_customer('buyer')
+        self.other_customer = self._make_customer('stranger')
+        self.vendor_a = self._make_vendor('alpha')
+        self.vendor_b = self._make_vendor('bravo')
+        for vendor in (self.vendor_a, self.vendor_b):
+            vendor.categories.add(self.category)
+
+        self.settings_row = TenderSettings.get_solo()
+        self.settings_row.confirmation_fee_percent = Decimal('10.00')
+        self.settings_row.is_confirmation_fee_active = True
+        self.settings_row.save()
+
+    # ------------------------------------------------------------- helpers
+    def _make_customer(self, tag):
+        user = User.objects.create_user(
+            username=tag, password='pw', role=User.Role.CUSTOMER,
+            first_name=tag.title(), phone_number='9000000001',
+        )
+        return Customer.objects.create(user=user)
+
+    def _make_vendor(self, tag):
+        user = User.objects.create_user(
+            username=tag, password='pw', role=User.Role.VENDOR,
+            first_name=tag.title(), phone_number='9000000002',
+        )
+        return Vendor.objects.create(
+            user=user, service_area='Zone 1', experience_years=5,
+            verification_status='VERIFIED',
+        )
+
+    def client_for(self, profile):
+        client = APIClient()
+        client.force_authenticate(user=profile.user)
+        return client
+
+    def open_tender(self):
+        return Tender.objects.create(
+            customer=self.customer, title='Build a 3BHK', category=self.category,
+            description='Ground floor', expected_budget=Decimal('1500000'),
+            status=Tender.Status.OPEN, contact_phone='9000000001',
+        )
+
+    def bid(self, vendor, tender, amount):
+        return TenderBid.objects.create(
+            tender=tender, vendor=vendor, amount=Decimal(str(amount))
+        )
+
+    def accept(self, bid):
+        return self.client_for(self.customer).post(
+            reverse('tender-bid-accept', args=[bid.id])
+        )
+
+    def open_order(self, tender, order_id='order_1'):
+        with mock.patch('payments.gateway.create_order',
+                        return_value={'id': order_id}):
+            return self.client_for(self.customer).post(
+                reverse('tender-confirmation', args=[tender.id])
+            )
+
+    # -------------------------------------------------- picking, not winning
+    def test_accepting_raises_a_fee_and_holds_the_tender(self):
+        tender = self.open_tender()
+        winner = self.bid(self.vendor_a, tender, '1400000')
+        loser = self.bid(self.vendor_b, tender, '1600000')
+
+        response = self.accept(winner)
+        self.assertEqual(response.status_code, 200)
+
+        tender.refresh_from_db()
+        winner.refresh_from_db()
+        loser.refresh_from_db()
+
+        self.assertEqual(tender.status, Tender.Status.PENDING_CONFIRMATION)
+        self.assertIsNone(tender.awarded_bid)
+        self.assertEqual(winner.status, TenderBid.Status.SELECTED)
+        # The loser has not lost anything yet -- nobody has won.
+        self.assertEqual(loser.status, TenderBid.Status.SUBMITTED)
+
+        fee = tender.pending_confirmation_fee
+        self.assertEqual(fee.amount, Decimal('140000.00'))
+        self.assertEqual(fee.percent, Decimal('10.00'))
+        self.assertEqual(fee.bid_amount, Decimal('1400000'))
+        self.assertEqual(response.data['fee']['amount'], '140000.00')
+
+    def test_the_rate_is_snapshotted_when_the_bid_is_picked(self):
+        """An admin changing the rate must not re-price a fee already raised."""
+        tender = self.open_tender()
+        self.accept(self.bid(self.vendor_a, tender, '1000000'))
+
+        self.settings_row.confirmation_fee_percent = Decimal('25.00')
+        self.settings_row.save()
+
+        fee = tender.pending_confirmation_fee
+        self.assertEqual(fee.percent, Decimal('10.00'))
+        self.assertEqual(fee.amount, Decimal('100000.00'))
+
+    def test_the_vendor_is_not_told_they_were_picked(self):
+        tender = self.open_tender()
+        picked = self.bid(self.vendor_a, tender, '1400000')
+        self.accept(picked)
+
+        my_bids = self.client_for(self.vendor_a).get(reverse('tender-my-bids'))
+        self.assertEqual(my_bids.data[0]['status'], TenderBid.Status.SUBMITTED)
+        self.assertEqual(my_bids.data[0]['status_display'], 'Submitted')
+
+        # Nor does the tender itself say a decision is being confirmed. They
+        # see it as open, with bidding closed -- the same shape as a tender
+        # whose deadline has passed.
+        detail = self.client_for(self.vendor_a).get(
+            reverse('tender-detail', args=[tender.id])).data
+        self.assertEqual(detail['status'], Tender.Status.OPEN)
+        self.assertEqual(detail['status_display'], 'Open for Bids')
+        self.assertFalse(detail['is_bidding_open'])
+
+        # And no project has appeared in their execution list.
+        won = self.client_for(self.vendor_a).get(reverse('tender-awarded-list'))
+        self.assertEqual(len(won.data), 0)
+
+        # The customer, meanwhile, sees exactly where it stands.
+        mine = self.client_for(self.customer).get(
+            reverse('tender-detail', args=[tender.id])).data
+        self.assertEqual(mine['status'], Tender.Status.PENDING_CONFIRMATION)
+
+    def test_the_fee_is_the_customers_business_only(self):
+        tender = self.open_tender()
+        self.accept(self.bid(self.vendor_a, tender, '1400000'))
+
+        mine = self.client_for(self.customer).get(
+            reverse('tender-detail', args=[tender.id])).data
+        self.assertEqual(mine['confirmation_fee']['amount'], '140000.00')
+
+        theirs = self.client_for(self.vendor_a).get(
+            reverse('tender-detail', args=[tender.id])).data
+        self.assertIsNone(theirs['confirmation_fee'])
+        self.assertIsNone(theirs['confirmation_fee_percent'])
+
+    def test_no_fee_awards_the_tender_immediately(self):
+        self.settings_row.is_confirmation_fee_active = False
+        self.settings_row.save()
+
+        tender = self.open_tender()
+        winner = self.bid(self.vendor_a, tender, '1400000')
+        loser = self.bid(self.vendor_b, tender, '1600000')
+
+        response = self.accept(winner)
+        self.assertIsNone(response.data['fee'])
+
+        tender.refresh_from_db()
+        loser.refresh_from_db()
+        self.assertEqual(tender.status, Tender.Status.AWARDED)
+        self.assertEqual(tender.awarded_vendor, self.vendor_a)
+        self.assertEqual(loser.status, TenderBid.Status.REJECTED)
+        self.assertFalse(TenderConfirmationFee.objects.exists())
+
+    def test_a_second_bid_cannot_be_picked_while_one_is_held(self):
+        tender = self.open_tender()
+        self.accept(self.bid(self.vendor_a, tender, '1400000'))
+
+        response = self.accept(self.bid(self.vendor_b, tender, '1200000'))
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(tender.confirmation_fees.count(), 1)
+
+    # --------------------------------------------------------- paying for it
+    def test_paying_awards_the_tender_and_closes_the_rest(self):
+        tender = self.open_tender()
+        winner = self.bid(self.vendor_a, tender, '1400000')
+        loser = self.bid(self.vendor_b, tender, '1600000')
+        self.accept(winner)
+
+        fee = tender.pending_confirmation_fee
+        self.assertTrue(tender_services.mark_fee_paid(
+            fee, payment_id='pay_1', method='upi'))
+
+        tender.refresh_from_db()
+        winner.refresh_from_db()
+        loser.refresh_from_db()
+        fee.refresh_from_db()
+
+        self.assertEqual(tender.status, Tender.Status.AWARDED)
+        self.assertEqual(tender.awarded_bid_id, winner.id)
+        self.assertEqual(winner.status, TenderBid.Status.ACCEPTED)
+        self.assertEqual(loser.status, TenderBid.Status.REJECTED)
+        self.assertEqual(fee.status, TenderConfirmationFee.Status.PAID)
+        self.assertEqual(fee.razorpay_payment_id, 'pay_1')
+        self.assertIsNotNone(fee.paid_at)
+
+    def test_paying_twice_awards_once(self):
+        """
+        The browser callback and the webhook arrive together by design. The
+        second one must not re-run the award or push the notifications again.
+        """
+        tender = self.open_tender()
+        winner = self.bid(self.vendor_a, tender, '1400000')
+        self.accept(winner)
+
+        fee = tender.pending_confirmation_fee
+        self.assertTrue(tender_services.mark_fee_paid(fee, payment_id='pay_1'))
+        self.assertFalse(tender_services.mark_fee_paid(fee, payment_id='pay_1'))
+
+        tender.refresh_from_db()
+        self.assertEqual(tender.status, Tender.Status.AWARDED)
+        self.assertEqual(
+            TenderConfirmationFee.objects.filter(
+                status=TenderConfirmationFee.Status.PAID).count(), 1)
+
+    # ------------------------------------------------------------- releasing
+    def test_releasing_reopens_the_tender_and_closes_the_fee(self):
+        tender = self.open_tender()
+        picked = self.bid(self.vendor_a, tender, '1400000')
+        self.accept(picked)
+
+        response = self.client_for(self.customer).delete(
+            reverse('tender-confirmation', args=[tender.id]))
+        self.assertEqual(response.status_code, 200)
+
+        tender.refresh_from_db()
+        picked.refresh_from_db()
+        fee = tender.confirmation_fees.first()
+
+        self.assertEqual(tender.status, Tender.Status.OPEN)
+        self.assertEqual(picked.status, TenderBid.Status.SUBMITTED)
+        self.assertEqual(fee.status, TenderConfirmationFee.Status.CANCELLED)
+        self.assertTrue(tender.is_bidding_open)
+
+    def test_a_released_tender_can_be_awarded_to_someone_else(self):
+        tender = self.open_tender()
+        first = self.bid(self.vendor_a, tender, '1400000')
+        second = self.bid(self.vendor_b, tender, '1600000')
+
+        self.accept(first)
+        self.client_for(self.customer).delete(
+            reverse('tender-confirmation', args=[tender.id]))
+        self.accept(second)
+
+        tender.refresh_from_db()
+        fee = tender.pending_confirmation_fee
+        self.assertEqual(tender.status, Tender.Status.PENDING_CONFIRMATION)
+        self.assertEqual(fee.bid_id, second.id)
+        self.assertEqual(fee.amount, Decimal('160000.00'))
+        self.assertEqual(tender.confirmation_fees.count(), 2)
+
+    def test_cancelling_the_tender_closes_the_fee(self):
+        tender = self.open_tender()
+        self.accept(self.bid(self.vendor_a, tender, '1400000'))
+
+        response = self.client_for(self.customer).post(
+            reverse('tender-cancel', args=[tender.id]), {'reason': 'Changed plans'},
+            format='json')
+        self.assertEqual(response.status_code, 200)
+
+        tender.refresh_from_db()
+        self.assertEqual(tender.status, Tender.Status.CANCELLED)
+        self.assertEqual(
+            tender.confirmation_fees.first().status,
+            TenderConfirmationFee.Status.CANCELLED,
+        )
+
+    def test_another_customer_cannot_touch_the_fee(self):
+        tender = self.open_tender()
+        self.accept(self.bid(self.vendor_a, tender, '1400000'))
+        intruder = self.client_for(self.other_customer)
+
+        url = reverse('tender-confirmation', args=[tender.id])
+        self.assertEqual(intruder.get(url).status_code, 404)
+        self.assertEqual(intruder.post(url).status_code, 404)
+        self.assertEqual(intruder.delete(url).status_code, 404)
+
+    # ---------------------------------------------------------- the gateway
+    def test_the_order_is_opened_once_and_reused(self):
+        tender = self.open_tender()
+        self.accept(self.bid(self.vendor_a, tender, '1400000'))
+        url = reverse('tender-confirmation', args=[tender.id])
+
+        with mock.patch('payments.gateway.create_order',
+                        return_value={'id': 'order_1'}) as create_order:
+            first = self.client_for(self.customer).post(url)
+            second = self.client_for(self.customer).post(url)
+
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(first.data['order_id'], 'order_1')
+        self.assertEqual(first.data['amount'], 14000000)   # paise
+        self.assertEqual(second.data['order_id'], 'order_1')
+        self.assertEqual(create_order.call_count, 1)
+
+    def test_verifying_a_genuine_payment_awards_the_tender(self):
+        tender = self.open_tender()
+        self.accept(self.bid(self.vendor_a, tender, '1400000'))
+        self.open_order(tender)
+
+        with mock.patch('payments.gateway.verify_checkout_signature',
+                        return_value=True), \
+             mock.patch('payments.gateway.fetch_payment', return_value={
+                 'order_id': 'order_1', 'amount': 14000000,
+                 'status': 'captured', 'method': 'upi',
+             }):
+            response = self.client_for(self.customer).post(
+                reverse('tender-confirmation-verify'), {
+                    'razorpay_order_id': 'order_1',
+                    'razorpay_payment_id': 'pay_1',
+                    'razorpay_signature': 'sig',
+                }, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        tender.refresh_from_db()
+        self.assertEqual(tender.status, Tender.Status.AWARDED)
+
+    def test_a_forged_signature_does_not_award_anything(self):
+        tender = self.open_tender()
+        self.accept(self.bid(self.vendor_a, tender, '1400000'))
+        self.open_order(tender)
+
+        with mock.patch('payments.gateway.verify_checkout_signature',
+                        return_value=False):
+            response = self.client_for(self.customer).post(
+                reverse('tender-confirmation-verify'), {
+                    'razorpay_order_id': 'order_1',
+                    'razorpay_payment_id': 'pay_forged',
+                    'razorpay_signature': 'nonsense',
+                }, format='json')
+
+        self.assertEqual(response.status_code, 400)
+        tender.refresh_from_db()
+        self.assertEqual(tender.status, Tender.Status.PENDING_CONFIRMATION)
+        self.assertEqual(
+            tender.pending_confirmation_fee.status,
+            TenderConfirmationFee.Status.PENDING,
+        )
+
+    def test_a_short_payment_is_refused(self):
+        tender = self.open_tender()
+        self.accept(self.bid(self.vendor_a, tender, '1400000'))
+        self.open_order(tender)
+
+        with mock.patch('payments.gateway.verify_checkout_signature',
+                        return_value=True), \
+             mock.patch('payments.gateway.fetch_payment', return_value={
+                 'order_id': 'order_1', 'amount': 100, 'status': 'captured',
+             }):
+            response = self.client_for(self.customer).post(
+                reverse('tender-confirmation-verify'), {
+                    'razorpay_order_id': 'order_1',
+                    'razorpay_payment_id': 'pay_1',
+                    'razorpay_signature': 'sig',
+                }, format='json')
+
+        self.assertEqual(response.status_code, 400)
+        tender.refresh_from_db()
+        self.assertEqual(tender.status, Tender.Status.PENDING_CONFIRMATION)
+
+    def test_the_webhook_settles_a_fee_the_app_never_confirmed(self):
+        """
+        The customer's phone died after paying. Razorpay's webhook is the
+        backstop, and it has to award the tender on its own.
+        """
+        tender = self.open_tender()
+        self.accept(self.bid(self.vendor_a, tender, '1400000'))
+        self.open_order(tender)
+
+        payload = {
+            'event': 'payment.captured',
+            'payload': {'payment': {'entity': {
+                'id': 'pay_1', 'order_id': 'order_1',
+                'amount': 14000000, 'method': 'upi',
+            }}},
+        }
+        with mock.patch('payments.gateway.verify_webhook_signature',
+                        return_value=True):
+            response = self.client.post(
+                reverse('payment-webhook-razorpay'),
+                data=json.dumps(payload), content_type='application/json',
+                HTTP_X_RAZORPAY_EVENT_ID='evt_1',
+            )
+
+        self.assertEqual(response.status_code, 200)
+        tender.refresh_from_db()
+        self.assertEqual(tender.status, Tender.Status.AWARDED)
+        self.assertEqual(
+            tender.confirmation_fees.first().status,
+            TenderConfirmationFee.Status.PAID,
+        )
+
+    def test_the_status_endpoint_answers_after_the_webhook_lands(self):
+        tender = self.open_tender()
+        self.accept(self.bid(self.vendor_a, tender, '1400000'))
+        url = reverse('tender-confirmation', args=[tender.id])
+
+        before = self.client_for(self.customer).get(url)
+        self.assertFalse(before.data['is_paid'])
+
+        tender_services.mark_fee_paid(tender.pending_confirmation_fee)
+
+        after = self.client_for(self.customer).get(url)
+        self.assertTrue(after.data['is_paid'])
+        self.assertEqual(after.data['tender_status'], Tender.Status.AWARDED)
+
+
+class TenderFeeDashboardTests(MediaSandboxMixin, TestCase):
+    """The admin's side of the fee: setting the rate, and the escape hatches."""
+
+    def setUp(self):
+        self.category = ServiceCategory.objects.create(name='Construction')
+        customer_user = User.objects.create_user(
+            username='buyer', password='pw', role=User.Role.CUSTOMER)
+        self.customer = Customer.objects.create(user=customer_user)
+
+        vendor_user = User.objects.create_user(
+            username='alpha', password='pw', role=User.Role.VENDOR,
+            phone_number='9000000002')
+        self.vendor = Vendor.objects.create(
+            user=vendor_user, service_area='Zone 1', verification_status='VERIFIED')
+        self.vendor.categories.add(self.category)
+
+        self.staff = User.objects.create_user(
+            username='admin1', password='pw', role=User.Role.ADMIN, is_staff=True)
+        sign_in(self.client, self.staff)
+
+        self.tender = Tender.objects.create(
+            customer=self.customer, title='Build a 3BHK', category=self.category,
+            description='x', expected_budget=Decimal('1500000'),
+            status=Tender.Status.OPEN,
+        )
+        self.bid = TenderBid.objects.create(
+            tender=self.tender, vendor=self.vendor, amount=Decimal('1000000')
+        )
+
+    def test_admin_sets_the_rate(self):
+        response = self.client.post(reverse('tender_settings'), {
+            'confirmation_fee_percent': '7.5',
+            'is_confirmation_fee_active': 'on',
+        })
+        self.assertEqual(response.status_code, 302)
+
+        settings_row = TenderSettings.get_solo()
+        self.assertEqual(settings_row.confirmation_fee_percent, Decimal('7.50'))
+        self.assertTrue(settings_row.is_confirmation_fee_active)
+        self.assertEqual(settings_row.fee_on(Decimal('1000000')), Decimal('75000.00'))
+
+    def test_a_rate_over_a_hundred_percent_is_refused(self):
+        TenderSettings.get_solo()
+        self.client.post(reverse('tender_settings'), {
+            'confirmation_fee_percent': '140',
+            'is_confirmation_fee_active': 'on',
+        })
+        self.assertEqual(
+            TenderSettings.get_solo().confirmation_fee_percent, Decimal('10.00')
+        )
+
+    def test_awarding_from_the_dashboard_waives_a_held_fee(self):
+        """The phone-call path: the admin awards it, the fee is not chased."""
+        tender_services.select_bid(self.bid)
+
+        response = self.client.post(
+            reverse('tender_award', args=[self.tender.id]), {'bid_id': self.bid.id})
+        self.assertEqual(response.status_code, 302)
+
+        self.tender.refresh_from_db()
+        self.bid.refresh_from_db()
+        fee = self.tender.confirmation_fees.first()
+
+        self.assertEqual(self.tender.status, Tender.Status.AWARDED)
+        self.assertEqual(self.bid.status, TenderBid.Status.ACCEPTED)
+        self.assertEqual(fee.status, TenderConfirmationFee.Status.WAIVED)
+        self.assertIn('admin1', fee.notes)
+
+    def test_the_fee_panels_render_on_both_pages(self):
+        """
+        The held-selection banner and the fee tables only appear once a fee
+        exists, so nothing else in the suite reaches those branches.
+        """
+        tender_services.select_bid(self.bid)
+
+        detail = self.client.get(reverse('tender_detail', args=[self.tender.id]))
+        self.assertEqual(detail.status_code, 200)
+        self.assertContains(detail, 'Waiting on the confirmation fee')
+        self.assertContains(detail, 'Confirmation fees')
+
+        settings_page = self.client.get(reverse('tender_settings'))
+        self.assertEqual(settings_page.status_code, 200)
+        self.assertContains(settings_page, 'Recent fees')
+        # 10% of the ₹10,00,000 bid, shown as still owed.
+        self.assertContains(settings_page, '100000.00')
+
+    def test_admin_releases_a_held_selection(self):
+        tender_services.select_bid(self.bid)
+
+        response = self.client.post(
+            reverse('tender_release_selection', args=[self.tender.id]),
+            {'reason': 'Customer asked for more quotes'})
+        self.assertEqual(response.status_code, 302)
+
+        self.tender.refresh_from_db()
+        self.bid.refresh_from_db()
+        self.assertEqual(self.tender.status, Tender.Status.OPEN)
+        self.assertEqual(self.bid.status, TenderBid.Status.SUBMITTED)
+        self.assertEqual(
+            self.tender.confirmation_fees.first().status,
+            TenderConfirmationFee.Status.CANCELLED,
+        )
+
+    def test_a_view_only_admin_cannot_change_the_rate(self):
+        viewer = User.objects.create_user(
+            username='viewer', password='pw', role=User.Role.ADMIN, is_staff=True)
+        client = self.client_class()
+        sign_in(client, viewer, permissions=['tenders.view'])
+
+        self.assertEqual(client.get(reverse('tender_settings')).status_code, 200)
+
+        # A refused POST is bounced to the dashboard, not back to the form.
+        response = client.post(reverse('tender_settings'), {
+            'confirmation_fee_percent': '1',
+        })
+        self.assertRedirects(
+            response, reverse('dashboard'), fetch_redirect_response=False
+        )
+        self.assertEqual(
+            TenderSettings.get_solo().confirmation_fee_percent, Decimal('10.00')
+        )

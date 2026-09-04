@@ -35,32 +35,10 @@
             {% csrf_token %}
 
             <!-- Thumbnail -->
-            <div>
-                <label class="block text-sm font-semibold text-gray-700 mb-2">Thumbnail Image *</label>
-                {% if is_edit and item.thumbnail %}
-                    <div class="mb-3">
-                        <img src="{{ item.thumbnail.url }}" alt="Current" class="w-32 h-40 rounded-xl object-cover border border-gray-200">
-                        <p class="text-xs text-gray-500 mt-1">Current thumbnail. Upload a new one to replace.</p>
-                    </div>
-                {% endif %}
-                <input type="file" name="thumbnail" accept="image/*" {% if not is_edit %}required{% endif %}
-                       class="w-full text-sm border border-gray-300 rounded-lg p-2 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary-100 file:text-primary-700 hover:file:bg-primary-200">
-                <p class="text-xs text-gray-500 mt-1">Portrait recommended (e.g. 720×960)</p>
-            </div>
+            {% include "dashboard/_file_field.html" with name="thumbnail" label="Thumbnail Image *" current=item.thumbnail removable=False required=True help="Portrait recommended (e.g. 720x960)" %}
 
             <!-- Video -->
-            <div>
-                <label class="block text-sm font-semibold text-gray-700 mb-2">Video File *</label>
-                {% if is_edit and item.video %}
-                    <div class="mb-3">
-                        <video src="{{ item.video.url }}" controls class="w-full max-h-48 rounded-xl border border-gray-200"></video>
-                        <p class="text-xs text-gray-500 mt-1">Current video. Upload a new one to replace.</p>
-                    </div>
-                {% endif %}
-                <input type="file" name="video" accept="video/*" {% if not is_edit %}required{% endif %}
-                       class="w-full text-sm border border-gray-300 rounded-lg p-2 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary-100 file:text-primary-700 hover:file:bg-primary-200">
-                <p class="text-xs text-gray-500 mt-1">MP4 recommended, under 20MB</p>
-            </div>
+            {% include "dashboard/_file_field.html" with name="video" label="Video File *" current=item.video removable=False required=True help="MP4 recommended, under 20MB" accept="video/*" preview="file" %}
 
             <!-- Title -->
             <div>

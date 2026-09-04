@@ -78,7 +78,7 @@
                 {% endif %}
                 <div class="flex items-center justify-between text-sm">
                     <span class="font-bold text-primary-600">₹{{ svc.price|floatformat:0 }}</span>
-                    <span class="text-xs text-gray-500">{{ svc.duration_minutes }} mins</span>
+                    {% if svc.shows_duration %}<span class="text-xs text-gray-500">{{ svc.duration_minutes }} mins</span>{% endif %}
                 </div>
 
                 <div class="flex gap-2 mt-4">

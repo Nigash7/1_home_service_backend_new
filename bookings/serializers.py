@@ -1,4 +1,7 @@
+from decimal import Decimal
+
 from rest_framework import serializers
+from services.pricing import line_total, parse_money
 from .models import Booking, JobStartPhoto
 
 
@@ -28,27 +31,18 @@ class BookingCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         customer = self.context['request'].user.customer_profile
 
-        # Calculate subtotal from services_json
+        # Calculate subtotal from services_json.
+        #
+        # Quantity is a Decimal, not an int: a per-sq-ft line carries 1000 and
+        # a per-kg line 2.5, and truncating those would charge the customer
+        # something other than what the cart showed them.
         services = validated_data.get('services_json', []) or []
-        subtotal = 0
-        for svc in services:
-            try:
-                price = float(svc.get('price', 0) or 0)
-            except (ValueError, TypeError):
-                price = 0
-            try:
-                qty = int(svc.get('qty', 1) or 1)
-            except (ValueError, TypeError):
-                qty = 1
-            subtotal += price * qty
+        subtotal = sum(
+            (line_total(svc) for svc in services), Decimal('0')
+        )
 
-        # Subtract discount
-        try:
-            discount = float(validated_data.get('discount_amount', 0) or 0)
-        except (ValueError, TypeError):
-            discount = 0
-
-        final_amount = max(subtotal - discount, 0)
+        discount = parse_money(validated_data.get('discount_amount'))
+        final_amount = max(subtotal - discount, Decimal('0'))
         validated_data['amount'] = final_amount
 
         booking = Booking.objects.create(customer=customer, **validated_data)

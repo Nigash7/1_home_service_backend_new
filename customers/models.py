@@ -8,6 +8,9 @@ class Customer(models.Model):
     state = models.CharField(max_length=100, blank=True)
     district = models.CharField(max_length=100, blank=True)
     pincode = models.CharField(max_length=10, blank=True)
+    # The address itself lives on User.email. This only records whether the
+    # customer proved it is theirs by entering the code we emailed them.
+    email_verified = models.BooleanField(default=False)
     latitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
     longitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)

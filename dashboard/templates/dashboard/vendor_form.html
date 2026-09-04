@@ -105,6 +105,69 @@
                     <textarea name="address" rows="2"
                               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">{% if is_edit %}{{ vendor.address }}{% endif %}</textarea>
                 </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-700 mb-1">Based in — State</label>
+                        <input type="text" name="state" list="state-list"
+                               value="{% if is_edit %}{{ vendor.state }}{% endif %}"
+                               placeholder="e.g. Kerala"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-700 mb-1">Based in — District</label>
+                        <input type="text" name="district"
+                               value="{% if is_edit %}{{ vendor.district }}{% endif %}"
+                               placeholder="e.g. Ernakulam"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                    </div>
+                </div>
+                <p class="text-xs text-gray-500 -mt-2">
+                    Where this vendor is based. Shown on their card to a customer in another
+                    state, so they can see how far away the vendor is.
+                </p>
+
+                <div>
+                    <label class="block text-xs font-semibold text-gray-700 mb-2">
+                        Where this vendor can serve
+                    </label>
+                    <p class="text-xs text-gray-500 mb-2">
+                        Tick every state the vendor will take work in, then name the districts
+                        inside it if they only cover part of that state. A customer whose place
+                        nobody covers is told no vendor serves their zone, and is offered vendors
+                        from elsewhere instead.
+                        <span class="text-amber-600">Tick nothing and this vendor is treated as
+                        covering every state.</span>
+                    </p>
+                    <div class="flex items-center gap-3 mb-2">
+                        <button type="button" onclick="toggleAllStates(true)"
+                                class="text-xs text-primary-600 font-semibold">Select all</button>
+                        <button type="button" onclick="toggleAllStates(false)"
+                                class="text-xs text-gray-500 font-semibold">Clear all</button>
+                    </div>
+                    <div id="state-boxes" class="space-y-1 max-h-72 overflow-y-auto border border-gray-200 rounded-lg p-3">
+                        {% for option in state_options %}
+                        <div class="state-row">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" name="service_states" value="{{ option.name }}"
+                                       {% if option.checked %}checked{% endif %}
+                                       class="state-toggle w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                                <span class="text-sm text-gray-700">{{ option.name }}</span>
+                            </label>
+                            <div class="districts-box ml-6 mt-1 mb-2 {% if not option.checked %}hidden{% endif %}">
+                                <input type="text" name="districts__{{ option.name }}"
+                                       value="{{ option.districts }}"
+                                       placeholder="Districts, comma separated — leave blank for the whole state"
+                                       class="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <datalist id="state-list">
+                    {% for option in state_options %}<option value="{{ option.name }}"></option>{% endfor %}
+                </datalist>
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-xs font-semibold text-gray-700 mb-1">Latitude</label>
@@ -240,22 +303,8 @@
                     </div>
 
                     <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-xs font-semibold text-gray-700 mb-1">Photo (square)</label>
-                            {% if is_edit and vendor.pro_photo %}
-                            <img src="{{ vendor.pro_photo.url }}" alt="" class="w-16 h-16 rounded-lg object-cover mb-2 border border-gray-200">
-                            {% endif %}
-                            <input type="file" name="pro_photo" accept="image/*"
-                                   class="w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:bg-gray-100 file:text-gray-700">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold text-gray-700 mb-1">Profile banner (wide)</label>
-                            {% if is_edit and vendor.pro_banner %}
-                            <img src="{{ vendor.pro_banner.url }}" alt="" class="w-full h-16 rounded-lg object-cover mb-2 border border-gray-200">
-                            {% endif %}
-                            <input type="file" name="pro_banner" accept="image/*"
-                                   class="w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:bg-gray-100 file:text-gray-700">
-                        </div>
+                        {% include "dashboard/_file_field.html" with name="pro_photo" label="Photo (square)" current=vendor.pro_photo %}
+                        {% include "dashboard/_file_field.html" with name="pro_banner" label="Profile banner (wide)" current=vendor.pro_banner %}
                     </div>
 
                     <div>
@@ -357,6 +406,33 @@ document.addEventListener('DOMContentLoaded', function () {
         </form>
 
 <script>
+    // A state's districts box only matters once that state is ticked, and an
+    // unticked state's districts are never read by the server anyway.
+    function syncDistrictsBox(row) {
+        var toggle = row.querySelector('.state-toggle');
+        var box = row.querySelector('.districts-box');
+        if (toggle && box) box.classList.toggle('hidden', !toggle.checked);
+    }
+
+    function toggleAllStates(checked) {
+        document.querySelectorAll('#state-boxes .state-row').forEach(function (row) {
+            var toggle = row.querySelector('.state-toggle');
+            if (toggle) toggle.checked = checked;
+            syncDistrictsBox(row);
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('#state-boxes .state-row').forEach(function (row) {
+            var toggle = row.querySelector('.state-toggle');
+            if (toggle) {
+                toggle.addEventListener('change', function () {
+                    syncDistrictsBox(row);
+                });
+            }
+        });
+    });
+
     // The showcase fields only matter for a Pro, so keep them out of the way
     // until the box is ticked.
     (function () {

@@ -16,6 +16,13 @@ CARD_FIELDS = {
     'service_id', 'name', 'description', 'price', 'duration_minutes',
     'image', 'category_id', 'category_name', 'subcategory_id', 'subcategory_name',
     'average_rating', 'total_reviews', 'discount_info',
+    # `price` is only a rate; these say what it is a rate of, so a card can
+    # show "₹15 / sq ft" rather than a bare ₹15. See services/pricing.py.
+    'pricing_type', 'price_label', 'unit_label', 'measure_label',
+    'needs_quantity', 'allows_decimal_quantity', 'is_quote_only',
+    # What the tender form opens with when a quote service sends the customer
+    # there; empty on every other type.
+    'tender_project_type',
 }
 
 

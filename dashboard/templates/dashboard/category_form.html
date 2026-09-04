@@ -27,18 +27,7 @@
         <form method="post" enctype="multipart/form-data" class="space-y-5">
             {% csrf_token %}
 
-            <!-- Icon upload -->
-            <div>
-                <label class="block text-sm font-semibold text-gray-700 mb-2">Category Icon</label>
-                {% if is_edit and category.icon %}
-                    <div class="mb-3">
-                        <img src="{{ category.icon.url }}" alt="Current icon" class="w-24 h-24 rounded-xl object-cover border border-gray-200">
-                        <p class="text-xs text-gray-500 mt-1">Current icon. Upload a new one to replace.</p>
-                    </div>
-                {% endif %}
-                <input type="file" name="icon" accept="image/*"
-                       class="w-full text-sm border border-gray-300 rounded-lg p-2 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary-100 file:text-primary-700 hover:file:bg-primary-200">
-            </div>
+            {% include "dashboard/_file_field.html" with name="icon" label="Category Icon" current=category.icon %}
 
             <!-- Name -->
             <div>

@@ -23,11 +23,14 @@ urlpatterns = [
     path('payments/<int:payment_id>/retry-payout/', views.retry_payout_view, name='retry_payout'),
     # Tenders (customer-posted requirements vendors bid on)
     path('tenders/', views.tenders_list_view, name='tenders_list'),
+    path('tenders/settings/', views.tender_settings_view, name='tender_settings'),
     path('tenders/<int:tender_id>/', views.tender_detail_view, name='tender_detail'),
     path('tenders/<int:tender_id>/approve/', views.tender_approve_view, name='tender_approve'),
     path('tenders/<int:tender_id>/reject/', views.tender_reject_view, name='tender_reject'),
     path('tenders/<int:tender_id>/award/', views.tender_award_view, name='tender_award'),
     path('tenders/<int:tender_id>/cancel/', views.tender_cancel_view, name='tender_cancel'),
+    path('tenders/<int:tender_id>/release-selection/',
+         views.tender_release_selection_view, name='tender_release_selection'),
 
     # Vendors
     path('vendors/', views.vendors_list_view, name='vendors_list'),

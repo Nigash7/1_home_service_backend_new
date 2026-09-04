@@ -2,40 +2,14 @@ from rest_framework import serializers
 from .models import ServiceCategory, SubCategory, Service
 
 
-class ServiceCardSerializer(serializers.ModelSerializer):
+class ServiceReviewStatsMixin:
     """
-    The payload behind every horizontal service card in the app — home
-    sections, recently viewed, book again. One serializer so a card looks and
-    prices the same wherever it appears.
+    The rating figures a service card shows, for any serializer that shows one.
+
+    A service with no reviews of its own falls back to its category's, because
+    a brand new service reading as unrated next to the category it belongs to
+    says less than the category's own record does.
     """
-    service_id = serializers.IntegerField(source='id')
-    image = serializers.SerializerMethodField()
-    category_id = serializers.IntegerField()
-    category_name = serializers.CharField(source='category.name')
-    subcategory_id = serializers.IntegerField(allow_null=True)
-    subcategory_name = serializers.SerializerMethodField()
-    average_rating = serializers.SerializerMethodField()
-    total_reviews = serializers.SerializerMethodField()
-    discount_info = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Service
-        fields = [
-            'service_id', 'name', 'description', 'price', 'duration_minutes',
-            'image', 'category_id', 'category_name', 'subcategory_id', 'subcategory_name',
-            'average_rating', 'total_reviews', 'discount_info',
-        ]
-
-    def get_image(self, obj):
-        if obj.image and hasattr(obj.image, 'url'):
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.image.url)
-            return obj.image.url
-        return None
-
-    def get_subcategory_name(self, obj):
-        return obj.subcategory.name if obj.subcategory else None
 
     def _review_queryset(self, obj):
         from reviews.models import Review
@@ -52,6 +26,63 @@ class ServiceCardSerializer(serializers.ModelSerializer):
 
     def get_total_reviews(self, obj):
         return self._review_queryset(obj).count()
+
+
+class ServiceCardSerializer(ServiceReviewStatsMixin, serializers.ModelSerializer):
+    """
+    The payload behind every horizontal service card in the app — home
+    sections, recently viewed, book again. One serializer so a card looks and
+    prices the same wherever it appears.
+    """
+    service_id = serializers.IntegerField(source='id')
+    image = serializers.SerializerMethodField()
+    category_id = serializers.IntegerField()
+    category_name = serializers.CharField(source='category.name')
+    subcategory_id = serializers.IntegerField(allow_null=True)
+    subcategory_name = serializers.SerializerMethodField()
+    average_rating = serializers.SerializerMethodField()
+    total_reviews = serializers.SerializerMethodField()
+    # Null on the types where it means nothing -- a per-hour service is as
+    # long as the customer books it for. The apps already skip a null
+    # duration, so this is what hides the "60 mins" chip on those.
+    duration_minutes = serializers.SerializerMethodField()
+    discount_info = serializers.SerializerMethodField()
+    # How `price` becomes an amount, so every card and the cart agree.
+    # `price_label` is the ready-made line ("₹15 / sq ft", "From ₹499",
+    # "Price on request"); the rest let a screen build its own.
+    price_label = serializers.CharField(read_only=True)
+    unit_label = serializers.CharField(read_only=True)
+    measure_label = serializers.CharField(read_only=True)
+    needs_quantity = serializers.BooleanField(read_only=True)
+    allows_decimal_quantity = serializers.BooleanField(read_only=True)
+    is_quote_only = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = Service
+        fields = [
+            'service_id', 'name', 'description', 'price', 'duration_minutes',
+            'image', 'category_id', 'category_name', 'subcategory_id', 'subcategory_name',
+            'average_rating', 'total_reviews', 'discount_info',
+            'pricing_type', 'price_label', 'unit_label', 'measure_label',
+            'needs_quantity', 'allows_decimal_quantity', 'is_quote_only',
+            # What the tender form opens with when a quote service sends
+            # the customer there.
+            'tender_project_type',
+        ]
+
+    def get_image(self, obj):
+        if obj.image and hasattr(obj.image, 'url'):
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+        return None
+
+    def get_subcategory_name(self, obj):
+        return obj.subcategory.name if obj.subcategory else None
+
+    def get_duration_minutes(self, obj):
+        return obj.duration_minutes if obj.shows_duration else None
 
     def get_discount_info(self, obj):
         from decimal import Decimal
@@ -110,12 +141,37 @@ class ServiceCardSerializer(serializers.ModelSerializer):
         }
 
 
-class ServiceSerializer(serializers.ModelSerializer):
+class ServiceSerializer(ServiceReviewStatsMixin, serializers.ModelSerializer):
     image = serializers.SerializerMethodField()
+    # The same rating figures the flat card shows. A service row that says
+    # nothing about how it has been rated is a row a customer cannot judge.
+    average_rating = serializers.SerializerMethodField()
+    total_reviews = serializers.SerializerMethodField()
+    # Null on the types where it means nothing -- a per-hour service is as
+    # long as the customer books it for. The apps already skip a null
+    # duration, so this is what hides the "60 mins" chip on those.
+    duration_minutes = serializers.SerializerMethodField()
+    # How `price` becomes an amount, so every card and the cart agree.
+    # `price_label` is the ready-made line ("₹15 / sq ft", "From ₹499",
+    # "Price on request"); the rest let a screen build its own.
+    price_label = serializers.CharField(read_only=True)
+    unit_label = serializers.CharField(read_only=True)
+    measure_label = serializers.CharField(read_only=True)
+    needs_quantity = serializers.BooleanField(read_only=True)
+    allows_decimal_quantity = serializers.BooleanField(read_only=True)
+    is_quote_only = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Service
-        fields = ['id', 'name', 'description', 'image', 'price', 'duration_minutes', 'is_active']
+        fields = [
+            'id', 'name', 'description', 'image', 'price', 'duration_minutes',
+            'is_active', 'average_rating', 'total_reviews',
+            'pricing_type', 'price_label', 'unit_label', 'measure_label',
+            'needs_quantity', 'allows_decimal_quantity', 'is_quote_only',
+            # What the tender form opens with when a quote service sends
+            # the customer there.
+            'tender_project_type',
+        ]
 
     def get_image(self, obj):
         if obj.image and hasattr(obj.image, 'url'):
@@ -124,6 +180,10 @@ class ServiceSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(obj.image.url)
             return obj.image.url
         return None
+
+
+    def get_duration_minutes(self, obj):
+        return obj.duration_minutes if obj.shows_duration else None
 
 
 class SubCategorySerializer(serializers.ModelSerializer):

@@ -166,6 +166,14 @@ class ProVendorListView(generics.ListAPIView):
         category_id = self.request.query_params.get('category')
         service_id = self.request.query_params.get('service')
 
+        # A customer only wants pros who work where they live. Vendors who
+        # named nowhere cover everywhere and stay in the list.
+        state = self.request.query_params.get('state')
+        if state:
+            queryset = queryset.serving_area(
+                state, self.request.query_params.get('district', ''),
+            )
+
         if service_id:
             service = Service.objects.filter(id=service_id).first()
             # An unknown service must show nothing, not every pro on the books.
@@ -187,3 +195,132 @@ class ProVendorDetailView(generics.RetrieveAPIView):
 
     def get_queryset(self):
         return _pro_vendor_queryset()
+
+
+# ---------------------------------------------------------------------------
+# "Can I have this service where I live?" — what the customer app asks the
+# moment a service is opened, before it lets the booking go any further.
+# ---------------------------------------------------------------------------
+
+from rest_framework.generics import get_object_or_404 as _get_object_or_404  # noqa: E402
+from .regions import (  # noqa: E402
+    INDIAN_STATES, canonical_state, district_label, districts_for,
+)
+
+# How many out-of-state vendors the fallback list offers. Enough to give the
+# customer a real choice, few enough that it stays a fallback.
+ELSEWHERE_LIMIT = 10
+
+
+class StateListView(APIView):
+    """
+    GET /api/vendors/states/
+
+    The states the forms offer, so the vendor app and the dashboard spell them
+    the same way. Open: the signup screen reads it before anyone has an account.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        return Response({'states': INDIAN_STATES})
+
+
+class RegionListView(APIView):
+    """
+    GET /api/vendors/regions/
+
+    Every state with the districts under it, so a form can offer both without
+    a request per keystroke. Around 20KB, fetched once when a profile screen
+    opens.
+
+    A state whose `districts` come back empty is one we hold no list for; the
+    form should let that district be typed rather than picked, because
+    refusing to save over a gap in our own data would stop somebody booking.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        return Response({
+            'states': [
+                {'name': name, 'districts': districts_for(name)}
+                for name in INDIAN_STATES
+            ],
+        })
+
+
+class ServiceAvailabilityView(APIView):
+    """
+    GET /api/vendors/availability/?service=<id>&state=<name>&district=<name>
+
+    Whether anyone can actually do this service where the customer lives, and
+    who is around if not.
+
+      available        can the booking go ahead here
+      vendor_count     how many vendors cover it here
+      vendors_elsewhere  vendors who do this service in *other* places, each
+                       carrying the state and district their card shows
+
+    `district` is optional and narrows the answer: a vendor who covers only
+    part of a state is counted for their part and nobody else's. Leave it off
+    and the question is asked of the state alone.
+
+    A blank or unknown state answers `available: true` with
+    `state_known: false`: not knowing where somebody is is not a reason to
+    stop them booking. Guests, and customers who have not filled in a profile
+    yet, come through here.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        service = _get_object_or_404(
+            Service, id=request.query_params.get('service'), is_active=True
+        )
+
+        state = (request.query_params.get('state') or '').strip()
+        district = (request.query_params.get('district') or '').strip()
+        if not state:
+            return Response({
+                'service': service.id,
+                'state': '',
+                'district': '',
+                'state_known': False,
+                'available': True,
+                'vendor_count': 0,
+                'vendors_elsewhere': [],
+            })
+
+        # Everyone who could actually be put on this job, anywhere.
+        candidates = (
+            Vendor.objects.bookable()
+            .for_service(service)
+            .select_related('user')
+            .prefetch_related('categories', 'subcategories', 'services',
+                              'service_regions')
+        )
+
+        here = candidates.serving_area(state, district)
+        vendor_count = here.count()
+
+        elsewhere = []
+        if not vendor_count:
+            # Pros first -- they are the ones with a photo and a profile to
+            # open -- then the best reviewed of everybody else.
+            others = (
+                candidates.outside_area(state, district)
+                .with_review_stats()
+                .order_by('-is_pro', 'pro_sort_order',
+                          F('avg_rating').desc(nulls_last=True), 'id')[:ELSEWHERE_LIMIT]
+            )
+            elsewhere = ProVendorCardSerializer(
+                others, many=True, context={'request': request}
+            ).data
+
+        return Response({
+            'service': service.id,
+            'state': canonical_state(state),
+            'district': district_label(district),
+            'state_known': True,
+            'available': bool(vendor_count),
+            'vendor_count': vendor_count,
+            'vendors_elsewhere': elsewhere,
+        })

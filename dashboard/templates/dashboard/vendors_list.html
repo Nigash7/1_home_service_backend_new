@@ -59,6 +59,7 @@
                         <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Name</th>
                         <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Phone</th>
                         <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Categories</th>
+                        <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Serves</th>
                         <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Verification</th>
                         <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Available</th>
                     </tr>
@@ -72,6 +73,16 @@
                             {% for label in vendor.coverage_labels|slice:":3" %}
                                 <span class="inline-block bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded mr-1">{{ label }}</span>
                             {% endfor %}
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-700">
+                            {% for label in vendor.service_region_labels|slice:":2" %}
+                                <span class="inline-block bg-blue-50 text-blue-700 text-xs px-2 py-1 rounded mr-1">{{ label }}</span>
+                            {% empty %}
+                                <span class="text-xs text-gray-400">Everywhere</span>
+                            {% endfor %}
+                            {% if vendor.service_region_labels|length > 2 %}
+                                <span class="text-xs text-gray-500">+{{ vendor.service_region_labels|length|add:"-2" }}</span>
+                            {% endif %}
                         </td>
                         <td class="px-4 py-3">
                             <span class="text-xs font-semibold px-2 py-1 rounded-full
@@ -91,7 +102,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="5" class="px-4 py-12 text-center text-gray-500">
+                        <td colspan="6" class="px-4 py-12 text-center text-gray-500">
                             No vendors found.
                             <a href="{% url 'vendor_add' %}" class="text-primary-600 font-semibold hover:underline">Add your first vendor</a>.
                         </td>

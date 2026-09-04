@@ -30,6 +30,23 @@ design and either one alone is enough — that is the point. A customer whose
 app is killed mid-checkout still ends up paid, because the webhook lands
 regardless.
 
+**Bookings are not the only thing charged through this account.** A tender
+confirmation fee — the percentage a customer pays to lock in the vendor whose
+bid they picked — uses `gateway` and this same webhook URL, but keeps its own
+records in `tenders.TenderConfirmationFee` and its own order/verify endpoints
+under `/api/tenders/`. The webhook recognises those orders and hands them to
+`tenders.services`; see `_handle_tender_fee` in `views.py`. It is a separate
+model on purpose: a platform fee is never released to a vendor and never paid
+out, so the escrow half of `Payment` would only ever be wrong on it.
+
+## Where the money lands
+
+Razorpay settles captured money to the bank account registered against the
+Razorpay account itself -- Razorpay Dashboard -> Account & Settings -> Banking
+details. No API call can point one payment at a different bank, so there is
+nothing to configure here and nothing in the database recording it. If money
+is arriving in the wrong account, that is the place to change it.
+
 ## The four rules that keep this honest
 
 1. **The amount never comes from the client.** `/order/` reads

@@ -28,6 +28,24 @@ def _covering_the_job(vendors, booking):
     return [v for v in vendors if all(v.covers(s) for s in booked)]
 
 
+def _serving_the_area(vendors, booking):
+    """
+    Drops vendors who do not work where the job is.
+
+    Falls through untouched when the booking records no state -- older
+    bookings predate address_state, and a job we cannot place must not become
+    a job nobody can be assigned to. A vendor who named nowhere covers
+    everywhere and is never dropped here, and one who covers the whole state
+    is kept whatever district the job is in.
+    """
+    state = getattr(booking, 'address_state', '') if booking else ''
+    if not state:
+        return vendors
+
+    district = getattr(booking, 'address_district', '') or ''
+    return [v for v in vendors if v.serves(state, district)]
+
+
 def get_rotation_queue(category, booking=None):
     """
     Returns eligible vendors for a category, ordered by round-robin priority.
@@ -37,7 +55,7 @@ def get_rotation_queue(category, booking=None):
         verification_status='VERIFIED',
         categories=category,
     ).exclude(status='OFFLINE').select_related('user').prefetch_related(
-        'categories', 'subcategories', 'services'
+        'categories', 'subcategories', 'services', 'service_regions'
     ).annotate(
         active_jobs=Count('assigned_bookings', filter=Q(
             assigned_bookings__status__in=['ASSIGNED', 'IN_PROGRESS']
@@ -48,6 +66,11 @@ def get_rotation_queue(category, booking=None):
     # a job outside their part. Vendors who never narrowed themselves cover
     # the whole category, so this changes nothing for them.
     vendors = _covering_the_job(vendors, booking)
+
+    # And a vendor who does not work where the customer is must not be
+    # rotated onto a job there -- the same rule the customer app applies when
+    # it decides whether the service can be booked at all.
+    vendors = _serving_the_area(vendors, booking)
 
     # Order: never-assigned first (last_assigned_at is null), then oldest assignment
     # Secondary sort: fewer active jobs

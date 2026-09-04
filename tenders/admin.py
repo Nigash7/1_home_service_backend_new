@@ -4,9 +4,11 @@ from .models import (
     Tender,
     TenderAttachment,
     TenderBid,
+    TenderConfirmationFee,
     TenderMilestone,
     TenderProgressPhoto,
     TenderProgressUpdate,
+    TenderSettings,
 )
 
 
@@ -55,6 +57,24 @@ class TenderBidAdmin(admin.ModelAdmin):
     list_filter = ('status',)
     search_fields = ('tender__title', 'vendor__user__username')
     inlines = [TenderMilestoneInline]
+
+
+@admin.register(TenderConfirmationFee)
+class TenderConfirmationFeeAdmin(admin.ModelAdmin):
+    list_display = ('id', 'tender', 'bid', 'percent', 'amount', 'status',
+                    'created_at', 'paid_at')
+    list_filter = ('status', 'is_live')
+    search_fields = ('tender__title', 'razorpay_order_id', 'razorpay_payment_id')
+    # Money the gateway told us about. Editing it here would mean the books
+    # said one thing and Razorpay another.
+    readonly_fields = ('tender', 'bid', 'percent', 'bid_amount', 'amount',
+                       'razorpay_order_id', 'razorpay_payment_id',
+                       'razorpay_signature', 'created_at', 'updated_at', 'paid_at')
+
+
+@admin.register(TenderSettings)
+class TenderSettingsAdmin(admin.ModelAdmin):
+    list_display = ('__str__', 'is_confirmation_fee_active', 'updated_at')
 
 
 @admin.register(TenderProgressUpdate)
