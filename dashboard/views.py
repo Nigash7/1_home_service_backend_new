@@ -8,7 +8,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404, render, redirect
-from django.http import JsonResponse
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.utils import timezone
 from django.db import models, transaction
 from django.db.models import Avg, Q, Sum
@@ -538,6 +538,53 @@ def vendor_detail_view(request, vendor_id):
         'subscription': vendor.active_subscription,
     }
     return render(request, 'dashboard/vendor_detail.html', context)
+
+
+# ---------- Vendor documents ----------
+
+@admin_login_required
+def vendor_document_view(request, vendor_id, doc_id):
+    """
+    Hands one vendor ID document to an admin who is allowed to see it.
+
+    VendorDocument.file is deliberately on local disk rather than Cloudinary
+    (see config.storages.private_storage) because these are government ID and
+    address proofs. That only buys anything if the file is unreachable without
+    a permission check -- and it was not: the template linked straight at
+    MEDIA_URL, which Django serves only under DEBUG and which nginx would
+    otherwise serve to anybody who has the path. So delivery goes through here,
+    and the deploy config marks the directory `internal`.
+
+    With MEDIA_X_ACCEL_REDIRECT on, nginx streams the bytes and Python only
+    writes a header. Off -- runserver, tests, any server that is not nginx --
+    it falls back to reading the file itself, which is slower but behaves the
+    same. Off is the safe default: a missed setting costs speed, not privacy.
+    """
+    document = get_object_or_404(
+        VendorDocument.objects.select_related('vendor'),
+        id=doc_id,
+        vendor_id=vendor_id,
+    )
+
+    if not document.file:
+        raise Http404('This document has no file.')
+
+    if getattr(settings, 'MEDIA_X_ACCEL_REDIRECT', False):
+        response = HttpResponse(status=200)
+        # nginx replaces the body with the file and sets its own headers, so
+        # Content-Type has to be cleared or it wins over nginx's guess.
+        del response['Content-Type']
+        response['X-Accel-Redirect'] = (
+            f"{settings.MEDIA_X_ACCEL_PREFIX}{document.file.name}"
+        )
+        response['Content-Disposition'] = f'inline; filename="{document.filename}"'
+        return response
+
+    try:
+        handle = document.file.open('rb')
+    except FileNotFoundError:
+        raise Http404('This document is recorded but its file is missing.')
+    return FileResponse(handle, filename=document.filename)
 
 
 # ---------- Verify Vendor ----------

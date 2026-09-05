@@ -296,11 +296,13 @@
                 {% if vendor.documents.all %}
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     {% for doc in vendor.documents.all %}
-                    <a href="{{ doc.file.url }}" target="_blank" rel="noopener"
+                    {# Never doc.file.url: that is a bare MEDIA_URL path with no
+                       permission check behind it, and these are ID proofs. #}
+                    <a href="{% url 'vendor_document' vendor.id doc.id %}" target="_blank" rel="noopener"
                        class="group block border border-gray-200 rounded-xl overflow-hidden hover:border-primary-400 hover:shadow-md transition">
                         <div class="h-36 bg-gray-50 flex items-center justify-center overflow-hidden">
                             {% if doc.is_image %}
-                                <img src="{{ doc.file.url }}" alt="{{ doc.get_doc_type_display }}"
+                                <img src="{% url 'vendor_document' vendor.id doc.id %}" alt="{{ doc.get_doc_type_display }}"
                                      class="w-full h-full object-cover group-hover:scale-105 transition">
                             {% else %}
                                 <div class="text-center px-2">

@@ -1,0 +1,26 @@
+# Normalise line endings so a checkout on Windows cannot produce files the
+# Linux server refuses to run.
+#
+# A shell script with CRLF endings fails on Ubuntu with "bash: \r: command not
+# found", which reads like a syntax error and is not. systemd and nginx are
+# similarly unforgiving about the stray carriage return.
+
+* text=auto
+
+# Anything the server executes or parses must be LF, whatever the machine that
+# committed it was running.
+deploy/*.sh      text eol=lf
+deploy/*.service text eol=lf
+deploy/*.socket  text eol=lf
+deploy/*.conf    text eol=lf
+*.py             text eol=lf
+
+# Binary: never touch these.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.mp4 binary

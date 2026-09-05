@@ -1,0 +1,25 @@
+# The socket nginx talks to.
+#
+# Kept separate from the service so systemd owns the socket's permissions and
+# recreates it on every restart. Without this, a crashed gunicorn can leave a
+# stale socket file behind that nginx then fails against with 502.
+#
+# Install:
+#   sudo cp deploy/gunicorn.socket /etc/systemd/system/homeservice.socket
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now homeservice.socket
+
+[Unit]
+Description=Home Service backend socket
+
+[Socket]
+# Flat path, not /run/homeservice/gunicorn.sock: a subdirectory under /run
+# would have to exist before this unit binds, and the only thing that creates
+# it is the service -- which starts afterwards. The socket would never come up.
+ListenStream=/run/homeservice.sock
+SocketUser=www-data
+SocketGroup=www-data
+SocketMode=0660
+
+[Install]
+WantedBy=sockets.target

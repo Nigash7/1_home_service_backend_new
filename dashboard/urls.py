@@ -38,6 +38,7 @@ urlpatterns = [
     path('vendors/<int:vendor_id>/', views.vendor_detail_view, name='vendor_detail'),
     path('vendors/<int:vendor_id>/edit/', views.vendor_edit_view, name='vendor_edit'),
     path('vendors/<int:vendor_id>/verify/', views.verify_vendor_view, name='verify_vendor'),
+    path('vendors/<int:vendor_id>/documents/<int:doc_id>/', views.vendor_document_view, name='vendor_document'),
 
     # Vendor Subscriptions
     path('subscription-plans/', views.subscription_plans_list_view, name='subscription_plans_list'),

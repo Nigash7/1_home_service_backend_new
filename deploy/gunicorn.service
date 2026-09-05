@@ -1,0 +1,50 @@
+# systemd unit for the Home Service backend.
+#
+# Install:
+#   sudo cp deploy/gunicorn.service /etc/systemd/system/homeservice.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now homeservice
+#
+# Check it:  sudo systemctl status homeservice
+# Logs:      sudo journalctl -u homeservice -f
+
+[Unit]
+Description=Home Service backend (gunicorn)
+Requires=homeservice.socket
+After=network.target
+
+[Service]
+Type=notify
+User=www-data
+Group=www-data
+WorkingDirectory=/srv/homeservice
+
+# Three workers suits a 2 vCPU / 2 GB t3.small: enough that one slow request
+# does not block the site, few enough to leave room for Postgres if it ever
+# shares the box. Raise it only after watching memory, not on principle.
+#
+# Push notifications are sent on background threads (notifications/push.py),
+# so a worker can still be finishing one after its request is answered. They
+# are daemon threads and close their own DB connection, which is why plain
+# sync workers are fine here and gevent is not needed.
+ExecStart=/srv/homeservice/venv/bin/gunicorn \
+    --workers 3 \
+    --timeout 120 \
+    --graceful-timeout 30 \
+    --access-logfile - \
+    --error-logfile - \
+    config.wsgi:application
+
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=30
+Restart=always
+RestartSec=5
+
+# The app reads .env from WorkingDirectory via python-decouple, so no
+# EnvironmentFile is needed here. Keep .env at /srv/homeservice/.env, owned by
+# www-data and chmod 600 -- it holds the database password and the Razorpay
+# secret.
+
+[Install]
+WantedBy=multi-user.target

@@ -173,6 +173,7 @@ URL_PERMISSIONS = {
     # Vendors
     'vendors_list': 'vendors.view',
     'vendor_detail': 'vendors.view',
+    'vendor_document': 'vendors.view',
     'vendor_add': 'vendors.manage',
     'vendor_edit': 'vendors.manage',
     'verify_vendor': 'vendors.manage',

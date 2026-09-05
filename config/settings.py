@@ -324,6 +324,16 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# Vendor ID documents are served by dashboard.views.vendor_document_view, which
+# checks the admin's permission first. On nginx the view can hand the file over
+# via X-Accel-Redirect so Python never streams the bytes; the prefix below must
+# match the `internal` location in deploy/nginx.conf.
+#
+# Default off. Turning it on without that nginx block gives a blank response;
+# leaving it off merely means Django reads the file itself. Slower, never wrong.
+MEDIA_X_ACCEL_REDIRECT = config('MEDIA_X_ACCEL_REDIRECT', default=False, cast=bool)
+MEDIA_X_ACCEL_PREFIX = config('MEDIA_X_ACCEL_PREFIX', default='/protected-media/')
+
 # ---------- Cloudinary (image & video CDN) ----------
 # Uploads go to Cloudinary instead of this server's disk, and are delivered
 # from a CDN. That removes two problems at once: Python is no longer the thing
