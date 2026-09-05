@@ -118,13 +118,16 @@ class Command(BaseCommand):
                 f'been switched to the new account.'
             )
 
-        # Signing source URLs with the old account's credentials, so this works
-        # even if that account has restricted delivery turned on.
-        source_config = cloudinary.Config()
-        source_config.cloud_name = source_cloud
-        source_config.api_key = options['from_key']
-        source_config.api_secret = options['from_secret']
-        source_config.secure = True
+        # Source credentials are passed to each call as keyword arguments, not
+        # via a Config object: cloudinary_url() ignores a `config=` argument
+        # without complaining and quietly builds the URL from the global config
+        # instead -- which is the destination. That reads as "copied 0 of 53"
+        # at best, and at worst copies the new account onto itself.
+        source_auth = {
+            'cloud_name': source_cloud,
+            'api_key': options['from_key'],
+            'api_secret': options['from_secret'],
+        }
 
         # The destination. cloudinary.config() is process-global and is what
         # uploader.upload() reads, so it must hold the *new* account.
@@ -134,6 +137,11 @@ class Command(BaseCommand):
             api_secret=settings.CLOUDINARY_API_SECRET,
             secure=True,
         )
+
+        # Checked even on a dry run. Without it the dry run reads only the
+        # local database, reports "would copy: 53" against credentials it never
+        # tried, and the first real run then fails 53 times over.
+        self._check_source_reachable(source_auth)
 
         self.stdout.write(f'From: {source_cloud}')
         self.stdout.write(f'To:   {target_cloud}')
@@ -182,7 +190,7 @@ class Command(BaseCommand):
                     type='upload',
                     secure=True,
                     sign_url=True,
-                    config=source_config,
+                    **source_auth,
                 )
 
                 if dry_run:
@@ -234,6 +242,27 @@ class Command(BaseCommand):
                 ))
 
         self._summary(copied, skipped, failed, dry_run)
+
+    def _check_source_reachable(self, source_auth):
+        """
+        Prove the old account's credentials work before doing anything else.
+
+        A wrong secret here does not fail loudly further down -- the signed
+        delivery URL is still well-formed, Cloudinary just refuses to fetch it,
+        and the run turns into a wall of identical upload errors.
+        """
+        try:
+            usage = cloudinary.api.usage(**source_auth)
+        except Exception as exc:
+            raise CommandError(
+                f"Could not sign in to the source account "
+                f"'{source_auth['cloud_name']}': {exc}\n"
+                f"Check the cloud name, API key and API secret on that "
+                f"account's Cloudinary dashboard, under Settings > API Keys."
+            )
+        held = usage.get('resources')
+        if held is not None:
+            self.stdout.write(f'Source account holds {held} asset(s).')
 
     def _exists_in_target(self, public_id, resource_type):
         try:
