@@ -85,10 +85,15 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('--from-cloud', required=True,
                             help="The OLD account's cloud name.")
-        parser.add_argument('--from-key', required=True,
-                            help="The OLD account's API key.")
-        parser.add_argument('--from-secret', required=True,
-                            help="The OLD account's API secret.")
+        # Optional, because Cloudinary copies by fetching a URL rather than by
+        # being handed bytes -- and delivery URLs are public unless that account
+        # has restricted media turned on. The common case needs no old key at
+        # all, which matters when nobody can still find the old credentials.
+        parser.add_argument('--from-key',
+                            help="The OLD account's API key. Only needed if that "
+                                 "account restricts delivery; omit otherwise.")
+        parser.add_argument('--from-secret',
+                            help="The OLD account's API secret. Goes with --from-key.")
         parser.add_argument('--dry-run', action='store_true',
                             help='List what would be copied and change nothing.')
         parser.add_argument('--limit', type=int,
@@ -123,11 +128,18 @@ class Command(BaseCommand):
         # without complaining and quietly builds the URL from the global config
         # instead -- which is the destination. That reads as "copied 0 of 53"
         # at best, and at worst copies the new account onto itself.
-        source_auth = {
-            'cloud_name': source_cloud,
-            'api_key': options['from_key'],
-            'api_secret': options['from_secret'],
-        }
+        from_key, from_secret = options['from_key'], options['from_secret']
+        if bool(from_key) != bool(from_secret):
+            raise CommandError(
+                '--from-key and --from-secret go together. Give both, or '
+                'neither and let the copy read public delivery URLs.'
+            )
+        signed = bool(from_key)
+
+        source_auth = {'cloud_name': source_cloud}
+        if signed:
+            source_auth['api_key'] = from_key
+            source_auth['api_secret'] = from_secret
 
         # The destination. cloudinary.config() is process-global and is what
         # uploader.upload() reads, so it must hold the *new* account.
@@ -139,9 +151,12 @@ class Command(BaseCommand):
         )
 
         # Checked even on a dry run. Without it the dry run reads only the
-        # local database, reports "would copy: 53" against credentials it never
+        # local database, reports "would copy: 53" against a source it never
         # tried, and the first real run then fails 53 times over.
-        self._check_source_reachable(source_auth)
+        if signed:
+            self._check_source_api(source_auth)
+        else:
+            self._check_source_public(source_auth)
 
         self.stdout.write(f'From: {source_cloud}')
         self.stdout.write(f'To:   {target_cloud}')
@@ -189,7 +204,7 @@ class Command(BaseCommand):
                     resource_type=resource_type,
                     type='upload',
                     secure=True,
-                    sign_url=True,
+                    sign_url=signed,
                     **source_auth,
                 )
 
@@ -243,7 +258,7 @@ class Command(BaseCommand):
 
         self._summary(copied, skipped, failed, dry_run)
 
-    def _check_source_reachable(self, source_auth):
+    def _check_source_api(self, source_auth):
         """
         Prove the old account's credentials work before doing anything else.
 
@@ -263,6 +278,57 @@ class Command(BaseCommand):
         held = usage.get('resources')
         if held is not None:
             self.stdout.write(f'Source account holds {held} asset(s).')
+
+    def _check_source_public(self, source_auth):
+        """
+        No credentials given, so prove the cloud name instead: fetch one real
+        asset the way Cloudinary itself will.
+
+        A wrong cloud name still produces a valid-looking URL that 404s, which
+        without this check would be 53 identical upload failures.
+        """
+        import requests
+
+        public_id, resource_type = self._first_asset()
+        if public_id is None:
+            raise CommandError('There are no Cloudinary files in the database to copy.')
+
+        url, _ = cloudinary.utils.cloudinary_url(
+            public_id, resource_type=resource_type, type='upload',
+            secure=True, **source_auth,
+        )
+        try:
+            response = requests.get(url, stream=True, timeout=30)
+        except Exception as exc:
+            raise CommandError(f'Could not reach {url}: {exc}')
+
+        if response.status_code == 401:
+            raise CommandError(
+                f"'{source_auth['cloud_name']}' restricts delivery, so this "
+                f"needs signed URLs after all. Re-run with --from-key and "
+                f"--from-secret from that account's Settings > API Keys."
+            )
+        if response.status_code != 200:
+            raise CommandError(
+                f'{url}\nreturned HTTP {response.status_code}. Either the cloud '
+                f'name is wrong, or that account no longer holds these files.'
+            )
+        self.stdout.write(self.style.SUCCESS(
+            f'Source reachable without credentials '
+            f'(checked {public_id}, {response.headers.get("Content-Type", "?")}).'
+        ))
+
+    def _first_asset(self):
+        """One (public_id, resource_type) to test the source with."""
+        for model, field in _iter_file_fields():
+            values = (model._default_manager
+                      .exclude(**{field.name: ''})
+                      .exclude(**{field.name: None})
+                      .values_list(field.name, flat=True)[:1])
+            for public_id in values:
+                if public_id:
+                    return public_id, _resource_type_for(field)
+        return None, None
 
     def _exists_in_target(self, public_id, resource_type):
         try:
